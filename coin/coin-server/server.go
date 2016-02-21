@@ -20,6 +20,12 @@ import (
 	"time"
 
 	"github.com/davidlazar/6.857coin/coin"
+	db "github.com/syndtr/goleveldb/leveldb"
+)
+
+const (
+	HeaderPath = "headers"
+	BlockPath  = "blocks"
 )
 
 type server struct {
@@ -34,6 +40,146 @@ type server struct {
 	scores   map[string]int
 
 	spam []*coin.Block
+}
+
+var (
+	GenesisHeader = Header{
+		PrevHash: coin.Hash{},
+		MerkleRoot: Hash{0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14, 0x9a, 0xfb,
+			0xf4, 0xc8, 0x99, 0x6f, 0xb9, 0x24, 0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b,
+			0x93, 0x4c, 0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52, 0xb8, 0x55},
+		Difficulty: 2,
+		Timestamp:  time.Now(),
+		Nonces:     [coin.NumCollisions]uint32{1, 1, 1},
+		Version:    0x00,
+	}
+)
+
+type (
+	server struct {
+		sync.Mutex
+
+		head         coin.Header
+		scores       map[string]int
+		heightToHash map[int]coin.Hash
+
+		headerDB *db.Db
+		blockDB  *db.Db
+	}
+
+	processedHeader struct {
+		header         coin.Header `json:"header"`
+		blockHeight    uint32      `json:"blockheight"`
+		isMainChain    bool        `json:"ismainchain"`
+		totalDiffuclty uint64      `json:"totaldiff"`
+	}
+)
+
+func NewServer() (*Server, error) {
+	s := Server{}
+
+	if err := s.loadScores(); err != nil {
+		return nil, err
+	}
+
+	if err := s.loadHeightToHash(); err != nil {
+		return nil, err
+	}
+
+	// Check for genesis block
+	if _, ok := s.heightToHash[0]; !ok {
+		// Attempt to write genesis block
+		if err := s.addBlock(GenesisHeader, nil); err != nil {
+			return nil, err
+		}
+	}
+
+	return s, nil
+}
+
+func (s *server) initDB() {
+	scoreDB, err := db.OpenFile(ScorePath, nil)
+	if err != nil {
+		log.Println(err)
+		panic("Unable to open score database")
+	}
+	s.scoreDB = scoreDB
+
+	headerDB, err := db.OpenFile(HeaderPath, nil)
+	if err != nil {
+		log.Println(err)
+		panic("Unable to open header database")
+	}
+	s.headerDB = headerDB
+
+	blockDB, err := db.OpenFile(BlockPath, nil)
+	if err != nil {
+		log.Println(err)
+		panic("Unable to open block database")
+	}
+	s.blockDB = blockDB
+}
+
+func (s *server) loadScores() error {
+	s.Lock()
+	defer s.Unlock()
+
+	s.scores = make(map[string]int)
+
+	// Iterate over all headers, add to score if version 0
+	iter := s.headerDB.NewIterator(nil, nil)
+	for iter.Next() {
+		// Load header
+		headerBytes := iter.Value()
+		var pheader processedHeader
+		if err := json.Unmarshal(headerBytes, pheader); err != nil {
+			return err
+		}
+
+		// Add to score map if version 0
+		if pheader.Version == 0 {
+			// Load block data and convert to string
+			blockBytes, err := getBlock(pheader.Header.Sum())
+			if err != nil {
+				return err
+			}
+			teamname := string(blockBytes)
+
+			// Increment team's score
+			if total, ok := s.scores[teamname]; ok {
+				s.scores[teamname] = total + 1
+			} else {
+				s.scores[teamname] = 1
+			}
+		}
+	}
+
+	return nil
+}
+
+func (s *Server) loadHeightToHash() error {
+	s.Lock()
+	defer s.Unlock()
+
+	s.heightToHash = make(map[int]coin.Hash)
+
+	iter := s.headerDB.NewIterator(nil, nil)
+	for iter.Next() {
+		// Unmarshal processedHeader
+		b := iter.Value()
+		var pheader processedHeader
+		err := json.Unmarshal(b, &pheader)
+		if err != nil {
+			return err
+		}
+
+		// Add to heightToHash map if header is in main chain
+		if pheader.isMainChain {
+			s.heightToHash[pheader.blockHeight] = pheader.Header.Sum()
+		}
+	}
+
+	return nil
 }
 
 func (s *server) loadBlocks(dir string) error {
@@ -104,6 +250,94 @@ func (s *server) updateSpam() {
 			}
 		}
 	}
+}
+
+func (s *server) addBlock(h coin.Header, b coin.Block) error {
+	s.Lock()
+	defer s.Unlock()
+
+	// Only process valid blocks
+	if err := h.Valid(b); err != nil {
+		return err
+	}
+
+	// Build processedHeader
+	var ph processedHeader
+	if len(s.heightToHash) == 0 {
+		// Process genesis header
+		ph := processedHeader{
+			header:      h,
+			blockheight: h.Difficulty,
+			isMainChain: true,
+		}
+	} else {
+		// Check that block extends existing header
+		prevHeader, err := s.getHeader(h.ParentID)
+		if err != nil {
+			return err
+		}
+
+		ph := processedHeader{
+			header:         h,
+			blockheight:    prevHeader.blockheight + 1,
+			totalDiffuclty: prevHeader.totalDiffuclty + h.Difficulty,
+		}
+	}
+
+	if ph.totalDiffuclty > s.head.totalDiffuclty {
+		if err := s.swapMainFork(ph); err != nil {
+			return err
+		}
+	}
+
+	if err := s.putHeader(ph); err != nil {
+		return err
+	}
+
+	// Save block under H(header)
+	headerID := h.Sum()
+
+	return s.putBlock(headerID, b)
+}
+
+func (s *server) putHeader(h processedHeader) error {
+	headerJson, err := json.Marshal(h)
+	if err != nil {
+		return err
+	}
+
+	id := h.Header.Sum()
+
+	return s.headerDB.Put(id[:], headerJson)
+}
+
+func (s *server) getHeader(h coin.Hash) (*processedHeader, error) {
+	headerBytes, err := s.headerDB.Get(h[:], nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var pheader *processedHeader
+	err = json.Unmarshal(headerBytes, &pheader)
+
+	return pheader, err
+}
+
+func (s *server) putBlock(id coin.Hash, b coin.Block) error {
+	return s.blockDB.Put(id[:], []byte(b))
+}
+
+func (s *server) getBlock(h coin.Hash) (coin.Block, error) {
+	blockBytes, err := s.blockDB.Get(h[:], nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return coin.Block(blockBytes), nil
+}
+
+func (s *server) swapMainFork(ph processedHeader) error {
+
 }
 
 func (s *server) addBlock(b *coin.Block) error {

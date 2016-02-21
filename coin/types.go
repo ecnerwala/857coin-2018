@@ -9,15 +9,31 @@ import (
 	"time"
 )
 
+var (
+	bigOne = new(big.Int).SetUint64(1)
+	bigTwo = new(big.Int).SetUint64(2)
+)
+
+var (
+	ErrUnkownVersion    = errors.New("unknown version")
+	ErrInvalidPoW       = errors.New("invalid PoW")
+	ErrInvalidNonceHash = errors.New("Hash(n | data) cannt be 0")
+	ErrBlockSize        = errors.New("block is too large")
+)
+
 type Hash [sha256.Size]byte
 
 func NewHash(hexstr string) (Hash, error) {
 	var h Hash
 	b, err := hex.DecodeString(hexstr)
 	if err != nil {
-		return h, fmt.Errorf("hex decode error: %s", err)
+		return h, err
+	}
+	if len(b) != sha256.Size {
+		return h, fmt.Errorf("short hash value")
 	}
 	copy(h[:], b)
+
 	return h, nil
 }
 
@@ -27,66 +43,117 @@ func (h Hash) String() string {
 
 // TODO speed up
 func (h Hash) MarshalJSON() ([]byte, error) {
-	s := fmt.Sprintf(`"%s"`, h.String())
-	return []byte(s), nil
+	return "\"" + h.String() + "\""
 }
 
 func (h *Hash) UnmarshalJSON(b []byte) error {
 	if b[0] != '"' || b[len(b)-1] != '"' {
 		return fmt.Errorf("expecting string for hash value")
 	}
-	n, err := hex.Decode(h[:], b[1:len(b)-1])
-	if err != nil {
-		return fmt.Errorf("hex decode error: %s", err)
-	}
-	if n != sha256.Size {
-		return fmt.Errorf("short hash value")
-	}
-	return nil
+	h, err := NewHash(b[1 : len(b)-1])
+
+	return err
 }
 
-type Block struct {
-	PrevHash  Hash
-	Contents  string
-	Nonce     uint64
-	Length    uint32
-	Timestamp time.Time
+const (
+	NumCollisions = 3
+)
+
+type Header struct {
+	ParentID   Hash                  `json:"parentid"`
+	MerkleRoot Hash                  `json:"root"`
+	Difficulty uint64                `json:"difficulty"`
+	Timestamp  time.Time             `json:"timestamp"`
+	Nonces     [NumCollisions]uint32 `json:"nonces"`
+	Version    uint8                 `json:"version"`
 }
 
-func (b *Block) Sum() Hash {
-	w := sha256.New()
-	w.Write(b.PrevHash[:])
-	w.Write([]byte(b.Contents))
-	binary.Write(w, binary.BigEndian, b.Nonce)
-	binary.Write(w, binary.BigEndian, b.Length)
-	sum := w.Sum(nil)
-	var h Hash
-	copy(h[:], sum[:])
-	return h
-}
+const MAX_BLOCK_SIZE = 1000000
 
-func (b *Block) Verify() (Hash, bool) {
-	h := b.Sum()
-	d := int(b.Length/100 + 24)
-	return h, fastCheck(d, &h)
-}
+type Block string
 
-func fastCheck(d int, h *Hash) bool {
-	for i := 0; i < d/8; i++ {
-		if h[i] != 0 {
-			return false
-		}
+func (h *Header) Sum() Hash {
+	b := make([]byte, 32+32+8+8+4+4+4+1)
+	offset := copy(b, h.PrevHash[:])
+	offset += copy(b[offset:], h.MerkleRoot[:])
+	offset += binary.PutUvarint(b[offset:], h.Difficulty)
+	offset += binary.PutUvarint(b[offset:], uint64(h.Timestamp.Unix()))
+	for i, n := range h.Nonces {
+		binary.BigEndian.PutUint32(b[offset+4*i:], n)
 	}
-	if m := d % 8; m != 0 {
-		if h[d/8]>>uint(8-m) != 0 {
-			return false
-		}
+	b[offset+12] = h.Version
+
+	return sha256.Sum256(b)
+}
+
+func (h *Header) SumNonce(ni int) Hash {
+	b := make([]byte, 32+32+8+8+4+1)
+	offset := copy(b, h.PrevHash[:])
+	offset += copy(b[offset:], h.MerkleRoot[:])
+	offset += binary.PutUvarint(b[offset:], h.Difficulty)
+	offset += binary.PutUvarint(b[offset:], uint64(h.Timestamp.Unix()))
+	binary.BigEndian.PutUint32(b[offset:], h.Nonces[ni])
+	b[offset+4] = h.Version
+
+	return sha256.Sum256(b)
+}
+
+func (h *Header) Valid(b Block) error {
+	if len(b) > MAX_BLOCK_SIZE {
+		return ErrBlockSize
 	}
+	// Header first validation
+	if err := h.validPoW(); err != nil {
+		return err
+	}
+
+	// Ensure header commits block
+	if err := h.validMerkleTree(b); err != nil {
+		return err
+	}
+
 	return true
 }
 
-func slowCheck(d int, h *Hash) bool {
-	target := new(big.Int).Exp(big.NewInt(2), big.NewInt(int64(256-d)), nil)
-	n := new(big.Int).SetBytes(h[:])
-	return n.Cmp(target) == -1
+func (h *Header) validPoW() error {
+	a := h.SumNonce(0)
+	b := h.SumNonce(1)
+	c := h.SumNonce(2)
+
+	aInt := new(big.Int).SetBytes(a[:])
+	bInt := new(big.Int).SetBytes(b[:])
+	cInt := new(big.Int).SetBytes(c[:])
+
+	// (a + b), (a + c), (b + c)
+	aPlusb := new(big.Int).Add(aInt, bInt)
+	aPlusc := new(big.Int).Add(aInt, cInt)
+	bPlusc := new(big.Int).Add(bInt, cInt)
+
+	// sum = (a+b)(a+c)(b+c)
+	sum := new(big.Int).Mul(aPlusb, aPlusc)
+	sum.Mul(sum, bPlusc)
+
+	// sum^2 mod d
+	d := new(big.Int).SetUint64(h.Difficulty)
+	sum.Exp(sum, bigTwo, d)
+
+	if sum.Cmp(bigOne) != 0 {
+		return ErrInvalidPoW
+	}
+
+	return nil
+}
+
+func (h *Header) validMerkleTree(b Block) error {
+	if h.Version == 0 {
+		if h.MerkleRoot == computeMerkleTreeV0(b) {
+			return nil
+		}
+	}
+
+	return ErrUnkownVersion
+}
+
+func computeMerkleTreeV0(b Block) Hash {
+	return sha256.Sum256([]byte(b))
 }
