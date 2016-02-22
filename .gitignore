@@ -1,0 +1,6 @@
+
+blockchain.db/*
+logs/*
+
+# vim files
+*.sw*

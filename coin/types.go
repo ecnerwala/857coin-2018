@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math/big"
 	"time"
@@ -43,14 +44,14 @@ func (h Hash) String() string {
 
 // TODO speed up
 func (h Hash) MarshalJSON() ([]byte, error) {
-	return "\"" + h.String() + "\""
+	return []byte("\"" + h.String() + "\""), nil
 }
 
-func (h *Hash) UnmarshalJSON(b []byte) error {
+func (h *Hash) UnmarshalJSON(b []byte) (err error) {
 	if b[0] != '"' || b[len(b)-1] != '"' {
 		return fmt.Errorf("expecting string for hash value")
 	}
-	h, err := NewHash(b[1 : len(b)-1])
+	*h, err = NewHash(string(b[1 : len(b)-1]))
 
 	return err
 }
@@ -64,7 +65,7 @@ type Header struct {
 	MerkleRoot Hash                  `json:"root"`
 	Difficulty uint64                `json:"difficulty"`
 	Timestamp  time.Time             `json:"timestamp"`
-	Nonces     [NumCollisions]uint32 `json:"nonces"`
+	Nonces     [NumCollisions]uint64 `json:"nonces"`
 	Version    uint8                 `json:"version"`
 }
 
@@ -73,27 +74,31 @@ const MAX_BLOCK_SIZE = 1000000
 type Block string
 
 func (h *Header) Sum() Hash {
-	b := make([]byte, 32+32+8+8+4+4+4+1)
-	offset := copy(b, h.PrevHash[:])
+	b := make([]byte, 32+32+8+8+8+8+8+1)
+	offset := copy(b, h.ParentID[:])
 	offset += copy(b[offset:], h.MerkleRoot[:])
-	offset += binary.PutUvarint(b[offset:], h.Difficulty)
-	offset += binary.PutUvarint(b[offset:], uint64(h.Timestamp.Unix()))
+	binary.BigEndian.PutUint64(b[offset:], h.Difficulty)
+	offset += 8
+	binary.BigEndian.PutUint64(b[offset:], uint64(h.Timestamp.Unix()))
+	offset += 8
 	for i, n := range h.Nonces {
-		binary.BigEndian.PutUint32(b[offset+4*i:], n)
+		binary.BigEndian.PutUint64(b[offset+8*i:], n)
 	}
-	b[offset+12] = h.Version
+	b[offset+24] = h.Version
 
 	return sha256.Sum256(b)
 }
 
 func (h *Header) SumNonce(ni int) Hash {
-	b := make([]byte, 32+32+8+8+4+1)
-	offset := copy(b, h.PrevHash[:])
+	b := make([]byte, 32+32+8+8+8+1)
+	offset := copy(b, h.ParentID[:])
 	offset += copy(b[offset:], h.MerkleRoot[:])
-	offset += binary.PutUvarint(b[offset:], h.Difficulty)
-	offset += binary.PutUvarint(b[offset:], uint64(h.Timestamp.Unix()))
-	binary.BigEndian.PutUint32(b[offset:], h.Nonces[ni])
-	b[offset+4] = h.Version
+	binary.BigEndian.PutUint64(b[offset:], h.Difficulty)
+	offset += 8
+	binary.BigEndian.PutUint64(b[offset:], uint64(h.Timestamp.Unix()))
+	offset += 8
+	binary.BigEndian.PutUint64(b[offset:], h.Nonces[ni])
+	b[offset+8] = h.Version
 
 	return sha256.Sum256(b)
 }
@@ -112,7 +117,7 @@ func (h *Header) Valid(b Block) error {
 		return err
 	}
 
-	return true
+	return nil
 }
 
 func (h *Header) validPoW() error {
