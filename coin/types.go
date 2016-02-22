@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"time"
 )
 
 var (
@@ -64,7 +63,7 @@ type Header struct {
 	ParentID   Hash                  `json:"parentid"`
 	MerkleRoot Hash                  `json:"root"`
 	Difficulty uint64                `json:"difficulty"`
-	Timestamp  time.Time             `json:"timestamp"`
+	Timestamp  int64                 `json:"timestamp"`
 	Nonces     [NumCollisions]uint64 `json:"nonces"`
 	Version    uint8                 `json:"version"`
 }
@@ -79,7 +78,7 @@ func (h *Header) Sum() Hash {
 	offset += copy(b[offset:], h.MerkleRoot[:])
 	binary.BigEndian.PutUint64(b[offset:], h.Difficulty)
 	offset += 8
-	binary.BigEndian.PutUint64(b[offset:], uint64(h.Timestamp.Unix()))
+	binary.BigEndian.PutUint64(b[offset:], uint64(h.Timestamp))
 	offset += 8
 	for i, n := range h.Nonces {
 		binary.BigEndian.PutUint64(b[offset+8*i:], n)
@@ -95,7 +94,7 @@ func (h *Header) SumNonce(ni int) Hash {
 	offset += copy(b[offset:], h.MerkleRoot[:])
 	binary.BigEndian.PutUint64(b[offset:], h.Difficulty)
 	offset += 8
-	binary.BigEndian.PutUint64(b[offset:], uint64(h.Timestamp.Unix()))
+	binary.BigEndian.PutUint64(b[offset:], uint64(h.Timestamp))
 	offset += 8
 	binary.BigEndian.PutUint64(b[offset:], h.Nonces[ni])
 	b[offset+8] = h.Version

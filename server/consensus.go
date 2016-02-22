@@ -108,7 +108,7 @@ func (bc *blockchain) mineGenesisBlock() error {
 			0xf4, 0xc8, 0x99, 0x6f, 0xb9, 0x24, 0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b,
 			0x93, 0x4c, 0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52, 0xb8, 0x55},
 		Difficulty: MinimumDifficulty,
-		Timestamp:  time.Now(),
+		Timestamp:  time.Now().UnixNano() * int64(time.Nanosecond) / int64(time.Millisecond),
 	}
 
 	for i := uint64(0); i < gh.Difficulty; i++ {
@@ -360,7 +360,8 @@ func (s *blockchain) newDifficultyTarget() (uint64, error) {
 	}
 
 	head := s.head.Header
-	windowTime := head.Timestamp.Sub(pastHeader.Header.Timestamp) / time.Second
+	//	Convert to seconds
+	windowTime := (head.Timestamp - pastHeader.Header.Timestamp) * int64(time.Second) / int64(time.Millisecond)
 	windowDifficulty := s.head.Header.Difficulty
 
 	newDiffMin := uint64(targetBlockInterval) * windowDifficulty / uint64(windowTime)

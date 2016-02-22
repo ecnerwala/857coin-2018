@@ -37,11 +37,14 @@ func NewExplorer(addr string) *explorer {
 			ReadTimeout: 10 * time.Second,
 		},
 	}
-	e.update()
+	err := e.update()
+	if err != nil {
+		log.Println("error updating: ", err)
+	}
 
 	http.HandleFunc("/", indexHandler)
 	http.HandleFunc("/add", addHandler)
-	http.HandleFunc("/head", headHandler)
+	http.HandleFunc("/next", nextHandler)
 	http.HandleFunc("/scores", scoresHandler)
 	http.Handle("/block/", http.StripPrefix("/block/", http.HandlerFunc(blockHandler)))
 
@@ -50,7 +53,7 @@ func NewExplorer(addr string) *explorer {
 	staticHandler := http.FileServer(http.Dir("static"))
 	http.Handle("/static/", http.StripPrefix("/static/", staticHandler))
 
-	err := e.server.ListenAndServe()
+	err = e.server.ListenAndServe()
 	if err != nil {
 		log.Fatal("ListenAndServe: ", err)
 	}
@@ -87,6 +90,7 @@ func (e *explorer) update() error {
 		headerBytes := iter.Value()
 		var pheader processedHeader
 		if err := json.Unmarshal(headerBytes, &pheader); err != nil {
+			bchain.Unlock()
 			return err
 		}
 
@@ -95,6 +99,7 @@ func (e *explorer) update() error {
 		hash := pheader.Header.Sum()
 		label, err := bchain.getBlock(hash)
 		if err != nil {
+			bchain.Unlock()
 			return err
 		}
 		trunc := 64
@@ -115,6 +120,7 @@ func (e *explorer) update() error {
 
 	buf := new(bytes.Buffer)
 	if err := e.template.Execute(buf, e); err != nil {
+		e.mu.Unlock()
 		return fmt.Errorf("template error: %s", err)
 	}
 	e.buf = buf.Bytes()

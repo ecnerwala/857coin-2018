@@ -26,7 +26,7 @@ func addHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("success"))
 }
 
-func headHandler(w http.ResponseWriter, r *http.Request) {
+func nextHandler(w http.ResponseWriter, r *http.Request) {
 	bchain.Lock()
 	head := bchain.head
 	diff := bchain.currDifficulty
