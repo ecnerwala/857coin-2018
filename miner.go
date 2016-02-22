@@ -66,7 +66,7 @@ freshNonces:
 }
 
 func submitBlock(h coin.Header, b coin.Block) error {
-	url := "http://localhost:8080/add"
+	url := "http://192.34.61.144:8080/add"
 
 	cblock := struct {
 		Header coin.Header `json:"header"`
@@ -95,7 +95,7 @@ func submitBlock(h coin.Header, b coin.Block) error {
 }
 
 func getBlockTemplate() (*coin.Header, error) {
-	url := "http://localhost:8080/head"
+	url := "http://192.34.61.144:8080/head"
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err

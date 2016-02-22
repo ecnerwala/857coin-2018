@@ -17,7 +17,7 @@ import (
 
 const (
 	targetBlockInterval      = 10 * time.Minute
-	difficultyRetargetLength = 3 * 24 * time.Hour
+	difficultyRetargetLength = 24 * time.Hour
 	difficultyRetargetWindow = uint32(difficultyRetargetLength / targetBlockInterval)
 
 	BlockchainPath = "blockchain.db"
