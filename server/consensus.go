@@ -1,13 +1,11 @@
 package server
 
 import (
-	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"math/big"
-	"sort"
 	"sync"
 	"time"
 
@@ -26,8 +24,8 @@ const (
 	HeaderBucket = "HEADER-"
 	BlockBucket  = "BLOCK-"
 
-//	MinimumDifficulty = 15485863
-//	MinimumDifficulty = 67867967
+	//	MinimumDifficulty = 15485863
+	//	MinimumDifficulty = 67867967
 	MinimumDifficulty = 7
 )
 
@@ -228,14 +226,11 @@ func (bc *blockchain) AddBlock(h coin.Header, b coin.Block) error {
 func (bc *blockchain) extendChain(ph *processedHeader, b coin.Block) error {
 	batch := &db.Batch{}
 
-	currHeight := bc.head.BlockHeight
-	forkHeight := uint64(0)
-
 	if ph.BlockHeight == 0 {
 		ph.IsMainChain = true
 
 	} else if ph.TotalDifficulty > bc.head.TotalDifficulty {
-		if forkHeight, err := bc.forkMainChain(ph, b, batch); err != nil {
+		if err := bc.forkMainChain(ph, b, batch); err != nil {
 			return err
 		}
 	}
@@ -272,7 +267,9 @@ func (bc *blockchain) extendChain(ph *processedHeader, b coin.Block) error {
 	return nil
 }
 
-func (bc *blockchain) forkMainChain(ph, b, batch) (uint64, error) {
+func (bc *blockchain) forkMainChain(ph *processedHeader, b coin.Block,
+	batch *db.Batch) error {
+
 	// Find most recent fork with main chain, starting from ph.  Memoize
 	// intermediate headers
 	sideheaders := []processedHeader{}
@@ -280,7 +277,7 @@ func (bc *blockchain) forkMainChain(ph, b, batch) (uint64, error) {
 	for {
 		tempph, err := bc.getHeader(sideph.Header.ParentID)
 		if err != nil {
-			return 0, err
+			return err
 		}
 		sideph = *tempph
 
@@ -288,7 +285,7 @@ func (bc *blockchain) forkMainChain(ph, b, batch) (uint64, error) {
 			break
 		}
 
-		sideheaders = append(sideheaders, sideph)
+		sideheaders = append([]processedHeader{sideph}, sideheaders...)
 	}
 
 	// Memoize headers in main fork
@@ -296,19 +293,16 @@ func (bc *blockchain) forkMainChain(ph, b, batch) (uint64, error) {
 	for i := bc.head.BlockHeight; i > sideph.BlockHeight; i-- {
 		id, ok := bc.heightToHash[i]
 		if !ok {
-			return 0, ErrNoBlockAtHeight(i)
+			return ErrNoBlockAtHeight(i)
 		}
 
 		mainph, err := bc.getHeader(id)
 		if err != nil {
-			return 0, err
+			return err
 		}
 
-		mainheaders = append(mainheaders, *mainph)
+		mainheaders = append([]processedHeader{*mainph}, mainheaders...)
 	}
-
-	sort.Reverse(sideheaders)
-	sort.Reverse(mainheaders)
 
 	// Revert main chain
 	for _, mph := range mainheaders {
@@ -316,7 +310,7 @@ func (bc *blockchain) forkMainChain(ph, b, batch) (uint64, error) {
 
 		headerBytes, err := json.Marshal(mph)
 		if err != nil {
-			return 0, err
+			return err
 		}
 
 		id := bucket(HeaderBucket, mph.Header.Sum())
@@ -329,7 +323,7 @@ func (bc *blockchain) forkMainChain(ph, b, batch) (uint64, error) {
 
 		headerBytes, err := json.Marshal(sph)
 		if err != nil {
-			return 0, err
+			return err
 		}
 
 		hid := bucket(HeaderBucket, sph.Header.Sum())
@@ -339,7 +333,7 @@ func (bc *blockchain) forkMainChain(ph, b, batch) (uint64, error) {
 	fmt.Printf("[Fork] main: %d, side %d\n", len(mainheaders), len(sideheaders))
 	ph.IsMainChain = true
 
-	return sideph.BlockHeight + 1, nil
+	return nil
 }
 
 /*
@@ -348,10 +342,10 @@ func (bc *blockchain) forkMainChain(ph, b, batch) (uint64, error) {
 
 func (s *blockchain) currDifficultyTarget() (uint64, error) {
 	if s.head.BlockHeight < difficultyRetargetWindow-1 {
-		return s.head.Header.Difficulty
+		return s.head.Header.Difficulty, nil
 	}
 
-	retargetOffset = s.head.BlockHeight % difficultyRetargetWindow
+	retargetOffset := s.head.BlockHeight % difficultyRetargetWindow
 	pastHeaderHeight := s.head.BlockHeight - retargetOffset
 
 	if s.head.BlockHeight%difficultyRetargetWindow == difficultyRetargetWindow-1 {
@@ -393,6 +387,7 @@ func (s *blockchain) currDifficultyTarget() (uint64, error) {
 }
 
 func findNextPrime(nmin uint64) (uint64, error) {
+	bigOne := new(big.Int).SetUint64(1)
 	n := new(big.Int).SetUint64(nmin)
 	for {
 		if n.ProbablyPrime(4) {
