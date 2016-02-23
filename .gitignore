@@ -1,6 +1,7 @@
 
 blockchain.db/*
 logs/*
+test/*
 
 # vim files
 *.sw*
