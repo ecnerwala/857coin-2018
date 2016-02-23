@@ -26,7 +26,7 @@ const (
 	HeaderBucket = "HEADER-"
 	BlockBucket  = "BLOCK-"
 
-	MinimumDifficulty = uint64(32)
+	MinimumDifficulty = uint64(34)
 )
 
 var genesisHeader coin.Header
@@ -34,6 +34,7 @@ var genesisHeader coin.Header
 var (
 	ErrHeaderExhausted = errors.New("exhausted all possible nonces")
 	ErrClockDrift      = errors.New("excessive clock drift")
+	ErrSpamHeader      = errors.New("header previously submitted")
 )
 
 type (
@@ -45,6 +46,8 @@ type (
 
 		scores       map[string]int
 		heightToHash map[uint64]coin.Hash
+
+		spam map[coin.Hash]struct{}
 
 		db *db.DB
 	}
@@ -65,6 +68,7 @@ type (
 func newBlockchain() (*blockchain, error) {
 	bc := &blockchain{
 		currDifficulty: MinimumDifficulty,
+		spam:           make(map[coin.Hash]struct{}),
 	}
 	bc.initDB()
 
@@ -139,6 +143,7 @@ getblocktemplate:
 				genesisHeader.Nonces[0] = ns[0]
 				genesisHeader.Nonces[1] = ns[1]
 				genesisHeader.Nonces[2] = i
+
 				return bc.AddBlock(genesisHeader, b)
 			}
 			hashMap[a] = append(ns, i)
@@ -223,6 +228,7 @@ func (bc *blockchain) loadHeightToHash() error {
  */
 
 func (bc *blockchain) AddBlock(h coin.Header, b coin.Block) error {
+	// Check that timestamp is within 2 minutes of now
 	diff := int64(h.Timestamp) - time.Now().UnixNano()
 	if diff > maxClockDrift || diff < -maxClockDrift {
 		return ErrClockDrift
@@ -235,6 +241,18 @@ func (bc *blockchain) AddBlock(h coin.Header, b coin.Block) error {
 
 	bc.Lock()
 	defer bc.Unlock()
+
+	// Check spam filter
+	id := h.Sum()
+	if _, ok := bc.spam[id]; ok {
+		return ErrSpamHeader
+	}
+
+	// Check database for existing header
+	if _, err := bc.getHeader(id); err == nil {
+		bc.spam[id] = struct{}{}
+		return ErrSpamHeader
+	}
 
 	// Build processedHeader
 	ph, err := bc.processHeader(h)
