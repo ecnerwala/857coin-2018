@@ -25,6 +25,8 @@ const (
 
 	HeaderBucket = "HEADER-"
 	BlockBucket  = "BLOCK-"
+
+	MinimumDifficulty = uint64(32)
 )
 
 var genesisHeader coin.Header
@@ -32,7 +34,6 @@ var genesisHeader coin.Header
 var (
 	ErrHeaderExhausted = errors.New("exhausted all possible nonces")
 	ErrClockDrift      = errors.New("excessive clock drift")
-	MinimumDifficulty  = uint64(36)
 )
 
 type (
@@ -106,7 +107,6 @@ func (bc *blockchain) mineGenesisBlock() error {
 	genesisHeader = coin.Header{
 		MerkleRoot: sha256.Sum256([]byte(msg)),
 		Difficulty: MinimumDifficulty,
-		Timestamp:  time.Now().UnixNano(),
 	}
 
 	// Calculate modulus
@@ -114,9 +114,20 @@ func (bc *blockchain) mineGenesisBlock() error {
 	mInt := new(big.Int).SetUint64(2)
 	mInt.Exp(mInt, dInt, nil)
 
+	ticker := time.NewTicker(30 * time.Second)
+
+getblocktemplate:
+	genesisHeader.Timestamp = time.Now().UnixNano()
 	hashMap := make(map[uint64][]uint64)
 	i := uint64(0)
 	for {
+		select {
+		case <-ticker.C:
+			goto getblocktemplate
+		default:
+			break
+		}
+
 		genesisHeader.Nonces[0] = i
 		aHash := genesisHeader.SumNonce(0)
 		aInt := new(big.Int).SetBytes(aHash[:])
