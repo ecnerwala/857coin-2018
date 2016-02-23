@@ -26,7 +26,9 @@ const (
 	HeaderBucket = "HEADER-"
 	BlockBucket  = "BLOCK-"
 
-	MinimumDifficulty = 230551
+//	MinimumDifficulty = 15485863
+//	MinimumDifficulty = 67867967
+	MinimumDifficulty = 7
 )
 
 var genesisHeader coin.Header
