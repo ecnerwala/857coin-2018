@@ -304,7 +304,7 @@ func (bc *blockchain) extendChain(ph *processedHeader, b coin.Block) error {
 	}
 
 	log.Printf("[Main Chain] height: %d diff: %d id: %s time: %s\n",
-		ph.BlockHeight, ph.TotalDifficulty, ph.Header.Sum(), header)
+		ph.BlockHeight, ph.TotalDifficulty, ph.Header.Sum(), headerTime)
 
 	return nil
 }
