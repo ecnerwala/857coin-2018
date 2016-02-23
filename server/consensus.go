@@ -26,7 +26,7 @@ const (
 	HeaderBucket = "HEADER-"
 	BlockBucket  = "BLOCK-"
 
-	MinimumDifficulty = uint64(10)
+	MinimumDifficulty = uint64(29)
 )
 
 var genesisHeader coin.Header
@@ -411,6 +411,8 @@ func (s *blockchain) currDifficultyTarget() (uint64, error) {
 	windowDifficulty := s.head.Header.Difficulty
 
 	newDiffMin := uint64(targetBlockInterval) * windowDifficulty / uint64(windowTime)
+	fmt.Printf("NEW MIN DIFF %d time %d diff %d", newDiffMin, windowTime,
+		windowDifficulty)
 
 	// Clamp to maximum of 4x increase/decrease
 	if newDiffMin > 2+windowDifficulty {
