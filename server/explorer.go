@@ -103,14 +103,25 @@ func (e *explorer) update() error {
 			bchain.Unlock()
 			return err
 		}
-		trunc := 64
+		trunc := 5
 		if len(label) < trunc {
 			trunc = len(label)
 		}
 		label = label[:trunc]
 
-		fmt.Fprintf(nodes, "{id:'%x',level:%d,label:'%s'},\n", hash[:], pheader.BlockHeight, label)
-		fmt.Fprintf(edges, "{from:'%x',to:'%x'},\n", parentID, hash[:])
+		var color string
+		if pheader.IsMainChain {
+			color = "green"
+		} else if pheader.EverMainChain {
+			color = "blue"
+		} else {
+			color = "black"
+		}
+
+		fmt.Fprintf(nodes, "{id:'%x',level:%d,label:'%s',color:'%s'},\n",
+			hash[:], pheader.BlockHeight, label, color)
+		fmt.Fprintf(edges, "{from:'%x',to:'%x',color:'%s'},\n",
+			parentID, hash[:], color)
 	}
 	bchain.loadScores()
 	bchain.Unlock()
