@@ -112,6 +112,7 @@ func (e *explorer) update() error {
 		fmt.Fprintf(nodes, "{id:'%x',level:%d,label:'%s'},\n", hash[:], pheader.BlockHeight, label)
 		fmt.Fprintf(edges, "{from:'%x',to:'%x'},\n", parentID, hash[:])
 	}
+	bchain.loadScores()
 	bchain.Unlock()
 
 	e.mu.Lock()

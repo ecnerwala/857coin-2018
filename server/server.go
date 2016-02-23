@@ -95,10 +95,17 @@ func blockHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(j)
 }
 
+type scoreReport struct {
+	MainScores map[string]int `json:"mainchain"`
+	Scores     map[string]int `json:"total"`
+}
+
 func scoresHandler(w http.ResponseWriter, r *http.Request) {
 	bchain.Lock()
-	j, err := json.MarshalIndent(bchain.scores, "", "  ")
+	sr := scoreReport{bchain.mainscores, bchain.scores}
+	j, err := json.MarshalIndent(sr, "", "  ")
 	bchain.Unlock()
+
 	if err != nil {
 		httpError(w, http.StatusInternalServerError, "json encoding error: %s", err)
 		return
