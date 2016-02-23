@@ -56,7 +56,7 @@
 <p>To add a block, send a POST request to <code>/add</code> with the JSON block data in the request body. The block must satisfy the proof-of-work scheme described below.</p>
 </blockquote>
 <h2 id="proof-of-work">Proof of Work</h2>
-<p>Note that our three-collision proof of work requires three hashes (each using one of the three nonces).</p>
+<p>Note that our three-collision proof of work requires three hashes (each using one of the three unique nonces).</p>
 <p>The hash of a block is the SHA-256 hash of the concatenation of the following data:</p>
 <ul>
 <li>the bytes of parentid interpreted as a 32-byte number</li>
@@ -74,7 +74,8 @@
 <ul>
 <li><code>B.parentid</code> is the Hash of a block P in the blockchain</li>
 <li><code>B.root</code> is the SHA256 hash of the block contents</li>
-<li><code>H(B,0) = H(B,1) = H(B,2) (mod 2^d)</code></li>
+<li><code>H(B,0) = H(B,1) = H(B,2) (mod 2^d), nonce1 != nonce2 != nonce3</code></li>
+<li><code>B.timestamp</code> must be less than 2 minutes old.</li>
 </ul>
 <p>Difficulty will be retargeted on a daily basis: make sure you start early!</p>
 <h2 id="rules">Rules</h2>
