@@ -16,27 +16,23 @@ import (
 )
 
 const (
-	targetBlockInterval      = 10 * time.Minute
-	difficultyRetargetLength = 24 * time.Hour
-	difficultyRetargetWindow = uint32(difficultyRetargetLength / targetBlockInterval)
+	targetBlockInterval      = 10 * 60 * 1000 * 1000 * 1000 * time.Nanosecond
+	difficultyRetargetLength = 24 * 60 * 60 * 1000 * 1000 * 1000 * time.Nanosecond
+	difficultyRetargetWindow = uint64(difficultyRetargetLength / targetBlockInterval)
 
 	BlockchainPath = "blockchain.db"
 
 	HeaderBucket = "HEADER-"
 	BlockBucket  = "BLOCK-"
 
-	//	MinimumDifficulty = 7
+	MinimumDifficulty = 7
 	//	MinimumDifficulty = 15485863
-	MinimumDifficulty = 67867967
+	//MinimumDifficulty = 67867967
 )
 
 var genesisHeader coin.Header
 
 var (
-	ErrNoBlockAtHeight = func(i uint32) error {
-		return fmt.Errorf("block at height %d not found in heightToHash map", i)
-	}
-
 	ErrHeaderExhausted = errors.New("exhausted all possible nonces")
 )
 
@@ -48,7 +44,7 @@ type (
 		currDifficulty uint64
 
 		scores       map[string]int
-		heightToHash map[uint32]coin.Hash
+		heightToHash map[uint64]coin.Hash
 
 		db *db.DB
 	}
@@ -60,7 +56,7 @@ type (
 
 	processedHeader struct {
 		Header          coin.Header `json:"header"`
-		BlockHeight     uint32      `json:"blockheight"`
+		BlockHeight     uint64      `json:"blockheight"`
 		IsMainChain     bool        `json:"ismainchain"`
 		TotalDifficulty uint64      `json:"totaldiff"`
 	}
@@ -82,7 +78,7 @@ func newBlockchain() (*blockchain, error) {
 
 	// Mine genesis block if necessary
 	if _, ok := bc.heightToHash[0]; !ok {
-		fmt.Println("Mining genesis block...")
+		log.Println("Mining genesis block...")
 		if err := bc.mineGenesisBlock(); err != nil {
 			return nil, err
 		}
@@ -105,24 +101,24 @@ func (bc *blockchain) initDB() {
 }
 
 func (bc *blockchain) mineGenesisBlock() error {
-	msg := "Never roll your own crypto."
+	msg := "Never roll your own crypto"
+	b := coin.Block(msg)
 
-	gh := coin.Header{
+	genesisHeader = coin.Header{
 		MerkleRoot: sha256.Sum256([]byte(msg)),
 		Difficulty: MinimumDifficulty,
-		Timestamp:  time.Now().Unix(),
+		Timestamp:  time.Now().UnixNano(),
 	}
 
-	for i := uint64(0); i < gh.Difficulty; i++ {
-		gh.Nonces[0] = i
-		for j := uint64(0); j < gh.Difficulty; j++ {
-			gh.Nonces[1] = j
-			for k := uint64(0); k < gh.Difficulty; k++ {
-				gh.Nonces[2] = k
-				if nil == gh.Valid("") {
-					fmt.Println("genesis header found:", gh)
-					genesisHeader = gh
-					return bc.AddBlock(gh, coin.Block(msg))
+	for i := uint64(0); i < genesisHeader.Difficulty; i++ {
+		genesisHeader.Nonces[0] = i
+		for j := uint64(0); j < genesisHeader.Difficulty; j++ {
+			genesisHeader.Nonces[1] = j
+			for k := uint64(0); k < genesisHeader.Difficulty; k++ {
+				genesisHeader.Nonces[2] = k
+				if nil == genesisHeader.Valid(b) {
+					log.Println("genesis header found:", genesisHeader)
+					return bc.AddBlock(genesisHeader, b)
 				}
 			}
 		}
@@ -165,7 +161,7 @@ func (bc *blockchain) loadScores() error {
 }
 
 func (bc *blockchain) loadHeightToHash() error {
-	bc.heightToHash = make(map[uint32]coin.Hash)
+	bc.heightToHash = make(map[uint64]coin.Hash)
 
 	maxDifficulty := uint64(0)
 	iter := bc.db.NewIterator(util.BytesPrefix([]byte(HeaderBucket)), nil)
@@ -260,7 +256,7 @@ func (bc *blockchain) extendChain(ph *processedHeader, b coin.Block) error {
 		return err
 	}
 
-	log.Printf("[Main Chain] height: %d diff: %d id: %s time: %d\n",
+	log.Printf("[MainChain] height: %d diff: %d id: %s time: %d\n",
 		ph.BlockHeight, ph.TotalDifficulty, ph.Header.Sum(), ph.Header.Timestamp)
 
 	return nil
@@ -292,7 +288,7 @@ func (bc *blockchain) forkMainChain(ph *processedHeader, b coin.Block,
 	for i := bc.head.BlockHeight; i > sideph.BlockHeight; i-- {
 		id, ok := bc.heightToHash[i]
 		if !ok {
-			return ErrNoBlockAtHeight(i)
+			return fmt.Errorf("block at height %d not found in heightToHash map", i)
 		}
 
 		mainph, err := bc.getHeader(id)
@@ -329,7 +325,7 @@ func (bc *blockchain) forkMainChain(ph *processedHeader, b coin.Block,
 		batch.Put(hid, headerBytes)
 	}
 
-	fmt.Printf("[Fork] main: %d, side %d\n", len(mainheaders), len(sideheaders))
+	log.Printf("[Fork] main: %d, side %d\n", len(mainheaders), len(sideheaders))
 	ph.IsMainChain = true
 
 	return nil
@@ -348,8 +344,6 @@ func (s *blockchain) currDifficultyTarget() (uint64, error) {
 	retargetOffset := headHeight % difficultyRetargetWindow
 	pastHeaderHeight := headHeight - retargetOffset
 
-	fmt.Printf("Retrieving header at height %d for head height %d\n", pastHeaderHeight, s.head.BlockHeight)
-
 	pastHeaderID, ok := s.heightToHash[pastHeaderHeight]
 	if !ok {
 		return 0, fmt.Errorf("unknown retargeting ID")
@@ -367,13 +361,9 @@ func (s *blockchain) currDifficultyTarget() (uint64, error) {
 	head := s.head.Header
 	//	Convert to seconds
 	windowTime := head.Timestamp - pastHeader.Header.Timestamp
-	fmt.Printf("Window Time: %d\n", windowTime)
 	windowDifficulty := s.head.Header.Difficulty
-	fmt.Printf("Window Difficulty: %d\n", windowDifficulty)
-	fmt.Printf("Target Interval: %d\n", targetBlockInterval)
 
 	newDiffMin := uint64(targetBlockInterval) * windowDifficulty / uint64(windowTime)
-	fmt.Printf("NewDiffMin %d\n", newDiffMin)
 
 	// Clamp to maximum of 4x increase/decrease
 	if newDiffMin > 4*windowDifficulty {

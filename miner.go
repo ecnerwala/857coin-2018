@@ -122,7 +122,7 @@ func getBlockTemplate() (*coin.Header, error) {
 	err = json.Unmarshal(body, header)
 
 	header.MerkleRoot = sha256.Sum256([]byte(""))
-	header.Timestamp = time.Now().Unix()
+	header.Timestamp = time.Now().UnixNano()
 
 	return header, err
 }
