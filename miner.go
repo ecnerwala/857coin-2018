@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"math/big"
 	"net/http"
 	"time"
 
@@ -36,7 +37,7 @@ freshNonces:
 		fmt.Println("Mining at difficulty:", header.Difficulty)
 
 		// Calculate modulus
-		dInt := new(big.Int).SetUint64(genesisHeader.Difficulty)
+		dInt := new(big.Int).SetUint64(header.Difficulty)
 		mInt := new(big.Int).SetUint64(2)
 		mInt.Exp(mInt, dInt, nil)
 
@@ -67,12 +68,13 @@ freshNonces:
 					header.Nonces[1] = ns[1]
 					header.Nonces[2] = i
 
-					if err := submitBlock(header, b); err != nil {
+					if err := submitBlock(*header, coin.Block("")); err != nil {
 						panic(err)
 					} else {
 						continue freshNonces
 					}
 				}
+
 				hashMap[a] = append(ns, i)
 			} else {
 				hashMap[a] = []uint64{i}

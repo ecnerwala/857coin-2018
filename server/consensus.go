@@ -384,14 +384,11 @@ func (s *blockchain) currDifficultyTarget() (uint64, error) {
 	newDiffMin := uint64(targetBlockInterval) * windowDifficulty / uint64(windowTime)
 
 	// Clamp to maximum of 4x increase/decrease
-	if newDiffMin > 4*windowDifficulty {
-		newDiffMin = 4 * windowDifficulty
-	} else if newDiffMin < windowDifficulty/4 {
-		newDiffMin = windowDifficulty / 4
+	if newDiffMin > 2+windowDifficulty {
+		newDiffMin = 2 + windowDifficulty
+	} else if newDiffMin < windowDifficulty-2 {
+		newDiffMin = windowDifficulty - 2
 	}
-
-	// Increase by 1.5 to predict increase in mining activity
-	newDiffMin = 3 * newDiffMin / 2
 
 	return findNextPrime(newDiffMin)
 }
