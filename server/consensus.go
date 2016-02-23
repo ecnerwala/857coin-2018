@@ -16,24 +16,23 @@ import (
 )
 
 const (
-	targetBlockInterval      = 10 * 60 * 1000 * 1000 * 1000 * time.Nanosecond
-	difficultyRetargetLength = 24 * 60 * 60 * 1000 * 1000 * 1000 * time.Nanosecond
+	targetBlockInterval      = 10 * 60 * 1000 * 1000 * 1000
+	difficultyRetargetLength = 24 * 60 * 60 * 1000 * 1000 * 1000
 	difficultyRetargetWindow = uint64(difficultyRetargetLength / targetBlockInterval)
+	maxClockDrift            = 2 * 60 * 1000 * 1000 * 1000
 
 	BlockchainPath = "blockchain.db"
 
 	HeaderBucket = "HEADER-"
 	BlockBucket  = "BLOCK-"
-
-	MinimumDifficulty = 7
-	//	MinimumDifficulty = 15485863
-	//MinimumDifficulty = 67867967
 )
 
 var genesisHeader coin.Header
 
 var (
 	ErrHeaderExhausted = errors.New("exhausted all possible nonces")
+	ErrClockDrift      = errors.New("excessive clock drift")
+	MinimumDifficulty  = uint64(10)
 )
 
 type (
@@ -110,21 +109,33 @@ func (bc *blockchain) mineGenesisBlock() error {
 		Timestamp:  time.Now().UnixNano(),
 	}
 
-	for i := uint64(0); i < genesisHeader.Difficulty; i++ {
-		genesisHeader.Nonces[0] = i
-		for j := uint64(0); j < genesisHeader.Difficulty; j++ {
-			genesisHeader.Nonces[1] = j
-			for k := uint64(0); k < genesisHeader.Difficulty; k++ {
-				genesisHeader.Nonces[2] = k
-				if nil == genesisHeader.Valid(b) {
-					log.Println("genesis header found:", genesisHeader)
-					return bc.AddBlock(genesisHeader, b)
-				}
-			}
-		}
-	}
+	// Calculate modulus
+	dInt := new(big.Int).SetUint64(genesisHeader.Difficulty)
+	mInt := new(big.Int).SetUint64(2)
+	mInt.Exp(mInt, dInt, nil)
 
-	return ErrHeaderExhausted
+	hashMap := make(map[uint64][]uint64)
+	i := uint64(0)
+	for {
+		genesisHeader.Nonces[0] = i
+		aHash := genesisHeader.SumNonce(0)
+		aInt := new(big.Int).SetBytes(aHash[:])
+		aInt.Mod(aInt, mInt)
+
+		a := aInt.Uint64()
+		if ns, ok := hashMap[a]; ok {
+			if len(ns) == 2 {
+				genesisHeader.Nonces[0] = ns[0]
+				genesisHeader.Nonces[1] = ns[1]
+				genesisHeader.Nonces[2] = i
+				return bc.AddBlock(genesisHeader, b)
+			}
+			hashMap[a] = append(ns, i)
+		} else {
+			hashMap[a] = []uint64{i}
+		}
+		i++
+	}
 }
 
 func (bc *blockchain) loadScores() error {
@@ -201,13 +212,18 @@ func (bc *blockchain) loadHeightToHash() error {
  */
 
 func (bc *blockchain) AddBlock(h coin.Header, b coin.Block) error {
-	bc.Lock()
-	defer bc.Unlock()
+	diff := int64(h.Timestamp) - time.Now().UnixNano()
+	if diff > maxClockDrift || diff < -maxClockDrift {
+		return ErrClockDrift
+	}
 
 	// Only process valid blocks
 	if err := h.Valid(b); err != nil {
 		return err
 	}
+
+	bc.Lock()
+	defer bc.Unlock()
 
 	// Build processedHeader
 	ph, err := bc.processHeader(h)
@@ -325,7 +341,10 @@ func (bc *blockchain) forkMainChain(ph *processedHeader, b coin.Block,
 		batch.Put(hid, headerBytes)
 	}
 
-	log.Printf("[Fork] main: %d, side %d\n", len(mainheaders), len(sideheaders))
+	if len(mainheaders) != 0 && len(sideheaders) != 0 {
+		log.Printf("[Fork] main: %d, side %d\n", len(mainheaders), len(sideheaders))
+	}
+
 	ph.IsMainChain = true
 
 	return nil
@@ -359,7 +378,6 @@ func (s *blockchain) currDifficultyTarget() (uint64, error) {
 	}
 
 	head := s.head.Header
-	//	Convert to seconds
 	windowTime := head.Timestamp - pastHeader.Header.Timestamp
 	windowDifficulty := s.head.Header.Difficulty
 
@@ -379,13 +397,16 @@ func (s *blockchain) currDifficultyTarget() (uint64, error) {
 }
 
 func findNextPrime(nmin uint64) (uint64, error) {
-	bigOne := new(big.Int).SetUint64(1)
+	if nmin%2 == 0 {
+		nmin++
+	}
+	bigTwo := new(big.Int).SetUint64(2)
 	n := new(big.Int).SetUint64(nmin)
 	for {
 		if n.ProbablyPrime(4) {
 			return n.Uint64(), nil
 		}
-		n.Add(n, bigOne)
+		n.Add(n, bigTwo)
 	}
 }
 

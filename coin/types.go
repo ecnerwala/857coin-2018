@@ -68,7 +68,7 @@ type Header struct {
 	Version    uint8                 `json:"version"`
 }
 
-const MAX_BLOCK_SIZE = 1000000
+const MAX_BLOCK_SIZE = 1000
 
 type Block string
 
@@ -120,6 +120,10 @@ func (h *Header) Valid(b Block) error {
 }
 
 func (h *Header) validPoW() error {
+	dInt := new(big.Int).SetUint64(h.Difficulty)
+	mInt := new(big.Int).SetUint64(2)
+	mInt.Exp(mInt, dInt, nil)
+
 	a := h.SumNonce(0)
 	b := h.SumNonce(1)
 	c := h.SumNonce(2)
@@ -128,20 +132,11 @@ func (h *Header) validPoW() error {
 	bInt := new(big.Int).SetBytes(b[:])
 	cInt := new(big.Int).SetBytes(c[:])
 
-	// (a + b), (a + c), (b + c)
-	aPlusb := new(big.Int).Add(aInt, bInt)
-	aPlusc := new(big.Int).Add(aInt, cInt)
-	bPlusc := new(big.Int).Add(bInt, cInt)
+	aInt.Mod(aInt, mInt)
+	bInt.Mod(bInt, mInt)
+	cInt.Mod(cInt, mInt)
 
-	// sum = (a+b)(a+c)(b+c)
-	sum := new(big.Int).Mul(aPlusb, aPlusc)
-	sum.Mul(sum, bPlusc)
-
-	// sum^2 mod d
-	d := new(big.Int).SetUint64(h.Difficulty)
-	sum.Exp(sum, bigTwo, d)
-
-	if sum.Cmp(bigOne) != 0 {
+	if aInt.Cmp(bInt) != 0 || aInt.Cmp(cInt) != 0 {
 		return ErrInvalidPoW
 	}
 
