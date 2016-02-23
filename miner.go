@@ -95,7 +95,7 @@ func submitBlock(h coin.Header, b coin.Block) error {
 }
 
 func getBlockTemplate() (*coin.Header, error) {
-	url := "http://192.34.61.144:8080/head"
+	url := "http://192.34.61.144:8080/next"
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
@@ -122,7 +122,7 @@ func getBlockTemplate() (*coin.Header, error) {
 	err = json.Unmarshal(body, header)
 
 	header.MerkleRoot = sha256.Sum256([]byte(""))
-	header.Timestamp = time.Now()
+	header.Timestamp = time.Now().Unix()
 
 	return header, err
 }

@@ -24,9 +24,9 @@ const (
 	HeaderBucket = "HEADER-"
 	BlockBucket  = "BLOCK-"
 
+	//	MinimumDifficulty = 7
 	//	MinimumDifficulty = 15485863
-	//	MinimumDifficulty = 67867967
-	MinimumDifficulty = 7
+	MinimumDifficulty = 67867967
 )
 
 var genesisHeader coin.Header
@@ -109,7 +109,7 @@ func (bc *blockchain) mineGenesisBlock() error {
 			0xf4, 0xc8, 0x99, 0x6f, 0xb9, 0x24, 0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b,
 			0x93, 0x4c, 0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52, 0xb8, 0x55},
 		Difficulty: MinimumDifficulty,
-		Timestamp:  time.Now().UnixNano() * int64(time.Nanosecond) / int64(time.Millisecond),
+		Timestamp:  time.Now().Unix(),
 	}
 
 	for i := uint64(0); i < gh.Difficulty; i++ {
@@ -166,7 +166,7 @@ func (bc *blockchain) loadScores() error {
 func (bc *blockchain) loadHeightToHash() error {
 	bc.heightToHash = make(map[uint32]coin.Hash)
 
-	maxHeight := uint32(0)
+	maxDifficulty := uint64(0)
 	iter := bc.db.NewIterator(util.BytesPrefix([]byte(HeaderBucket)), nil)
 	for iter.Next() {
 		// Unmarshal processedHeader
@@ -182,8 +182,8 @@ func (bc *blockchain) loadHeightToHash() error {
 			id := pheader.Header.Sum()
 			bc.heightToHash[pheader.BlockHeight] = id
 
-			if pheader.BlockHeight > maxHeight {
-				maxHeight = pheader.BlockHeight
+			if pheader.TotalDifficulty > maxDifficulty {
+				maxDifficulty = pheader.TotalDifficulty
 				bc.head = pheader
 			}
 		}
@@ -341,16 +341,15 @@ func (bc *blockchain) forkMainChain(ph *processedHeader, b coin.Block,
  */
 
 func (s *blockchain) currDifficultyTarget() (uint64, error) {
-	if s.head.BlockHeight < difficultyRetargetWindow-1 {
+	headHeight := s.head.BlockHeight
+	if headHeight < difficultyRetargetWindow-1 {
 		return s.head.Header.Difficulty, nil
 	}
 
-	retargetOffset := s.head.BlockHeight % difficultyRetargetWindow
-	pastHeaderHeight := s.head.BlockHeight - retargetOffset
+	retargetOffset := headHeight % difficultyRetargetWindow
+	pastHeaderHeight := headHeight - retargetOffset
 
-	if s.head.BlockHeight%difficultyRetargetWindow == difficultyRetargetWindow-1 {
-		pastHeaderHeight -= 1 + difficultyRetargetWindow
-	}
+	fmt.Printf("Retrieving header at height %d for head height %d\n", pastHeaderHeight, s.head.BlockHeight)
 
 	pastHeaderID, ok := s.heightToHash[pastHeaderHeight]
 	if !ok {
@@ -368,10 +367,14 @@ func (s *blockchain) currDifficultyTarget() (uint64, error) {
 
 	head := s.head.Header
 	//	Convert to seconds
-	windowTime := (head.Timestamp - pastHeader.Header.Timestamp) * int64(time.Second) / int64(time.Millisecond)
+	windowTime := head.Timestamp - pastHeader.Header.Timestamp
+	fmt.Printf("Window Time: %d\n", windowTime)
 	windowDifficulty := s.head.Header.Difficulty
+	fmt.Printf("Window Difficulty: %d\n", windowDifficulty)
+	fmt.Printf("Target Interval: %d\n", targetBlockInterval)
 
 	newDiffMin := uint64(targetBlockInterval) * windowDifficulty / uint64(windowTime)
+	fmt.Printf("NewDiffMin %d\n", newDiffMin)
 
 	// Clamp to maximum of 4x increase/decrease
 	if newDiffMin > 4*windowDifficulty {
