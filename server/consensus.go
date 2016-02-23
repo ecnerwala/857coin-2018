@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"math/big"
 	"sync"
 	"time"
@@ -190,6 +191,8 @@ func (bc *blockchain) loadScores() error {
 func (bc *blockchain) loadHeightToHash() error {
 	bc.heightToHash = make(map[uint64]coin.Hash)
 
+	maxDifficulty := uint64(0)
+	iter := bc.db.NewIterator(util.BytesPrefix([]byte(HeaderBucket)), nil)
 	for iter.Next() {
 		// Unmarshal processedHeader
 		b := iter.Value()
@@ -415,14 +418,14 @@ func (s *blockchain) currDifficultyTarget() (uint64, error) {
 	if logRatio > 2 {
 		newDifficulty += 2
 	} else if logRatio < -2 {
-		newDifficulty -= -2
+		newDifficulty -= 2
 	} else if logRatio < 0 {
-		newDifficulty -= uint64(logRatio)
+		newDifficulty -= uint64(-logRatio)
 	} else {
 		newDifficulty += uint64(logRatio)
 	}
 
-	return newDifficulty
+	return newDifficulty, nil
 }
 
 /*
