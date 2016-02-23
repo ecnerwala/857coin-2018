@@ -26,7 +26,7 @@ const (
 	HeaderBucket = "HEADER-"
 	BlockBucket  = "BLOCK-"
 
-	MinimumDifficulty = uint64(29)
+	MinimumDifficulty = uint64(34)
 )
 
 var genesisHeader coin.Header
@@ -118,7 +118,7 @@ func (bc *blockchain) mineGenesisBlock() error {
 	mInt := new(big.Int).SetUint64(2)
 	mInt.Exp(mInt, dInt, nil)
 
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(90 * time.Second)
 
 getblocktemplate:
 	genesisHeader.Timestamp = time.Now().UnixNano()
@@ -190,8 +190,6 @@ func (bc *blockchain) loadScores() error {
 func (bc *blockchain) loadHeightToHash() error {
 	bc.heightToHash = make(map[uint64]coin.Hash)
 
-	maxDifficulty := uint64(0)
-	iter := bc.db.NewIterator(util.BytesPrefix([]byte(HeaderBucket)), nil)
 	for iter.Next() {
 		// Unmarshal processedHeader
 		b := iter.Value()
@@ -408,34 +406,23 @@ func (s *blockchain) currDifficultyTarget() (uint64, error) {
 
 	head := s.head.Header
 	windowTime := head.Timestamp - pastHeader.Header.Timestamp
-	windowDifficulty := s.head.Header.Difficulty
 
-	newDiffMin := uint64(targetBlockInterval) * windowDifficulty / uint64(windowTime)
-	fmt.Printf("NEW MIN DIFF %d time %d diff %d", newDiffMin, windowTime,
-		windowDifficulty)
+	ratio := float64(targetBlockInterval) / float64(windowTime)
+	logRatio := math.Log2(ratio)
 
 	// Clamp to maximum of 4x increase/decrease
-	if newDiffMin > 2+windowDifficulty {
-		newDiffMin = 2 + windowDifficulty
-	} else if newDiffMin < windowDifficulty-2 {
-		newDiffMin = windowDifficulty - 2
+	newDifficulty := s.head.Header.Difficulty
+	if logRatio > 2 {
+		newDifficulty += 2
+	} else if logRatio < -2 {
+		newDifficulty -= -2
+	} else if logRatio < 0 {
+		newDifficulty -= uint64(logRatio)
+	} else {
+		newDifficulty += uint64(logRatio)
 	}
 
-	return findNextPrime(newDiffMin)
-}
-
-func findNextPrime(nmin uint64) (uint64, error) {
-	if nmin%2 == 0 {
-		nmin++
-	}
-	bigTwo := new(big.Int).SetUint64(2)
-	n := new(big.Int).SetUint64(nmin)
-	for {
-		if n.ProbablyPrime(4) {
-			return n.Uint64(), nil
-		}
-		n.Add(n, bigTwo)
-	}
+	return newDifficulty
 }
 
 /*

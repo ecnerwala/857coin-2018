@@ -15,7 +15,7 @@ import (
 
 func main() {
 	//prevHash, _ := coin.NewHash("b4acc61d6bee28979e6a936c89e37b324630c885775eeba36e6ae1ecabad4c13")
-	ticker := time.NewTicker(20 * time.Second)
+	ticker := time.NewTicker(5 * time.Second)
 
 getblocktemplate:
 	for {

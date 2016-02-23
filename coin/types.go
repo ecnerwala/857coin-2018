@@ -120,6 +120,12 @@ func (h *Header) Valid(b Block) error {
 }
 
 func (h *Header) validPoW() error {
+	if h.Nonces[0] == h.Nonces[1] ||
+		h.Nonces[0] == h.Nonces[2] ||
+		h.Nonces[1] == h.Nonces[2] {
+		return ErrInvalidPoW
+	}
+
 	dInt := new(big.Int).SetUint64(h.Difficulty)
 	mInt := new(big.Int).SetUint64(2)
 	mInt.Exp(mInt, dInt, nil)
