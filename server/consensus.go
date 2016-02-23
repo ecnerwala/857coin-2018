@@ -47,6 +47,7 @@ type (
 
 		scores       map[string]int
 		mainscores   map[string]int
+		everscores   map[string]int
 		heightToHash map[uint64]coin.Hash
 
 		spam map[coin.Hash]struct{}
@@ -63,6 +64,7 @@ type (
 		Header          coin.Header `json:"header"`
 		BlockHeight     uint64      `json:"blockheight"`
 		IsMainChain     bool        `json:"ismainchain"`
+		EverMainChain   bool        `json:"evermainchain"`
 		TotalDifficulty uint64      `json:"totaldiff"`
 	}
 )
@@ -159,6 +161,7 @@ getblocktemplate:
 func (bc *blockchain) loadScores() error {
 	bc.scores = make(map[string]int)
 	bc.mainscores = make(map[string]int)
+	bc.everscores = make(map[string]int)
 
 	// Iterate over all headers, add to score if version 0
 	iter := bc.db.NewIterator(util.BytesPrefix([]byte(HeaderBucket)), nil)
@@ -178,19 +181,30 @@ func (bc *blockchain) loadScores() error {
 				continue
 			}
 
-			// Increment team's score
+			// Increment total score
 			if total, ok := bc.scores[teamname]; ok {
 				bc.scores[teamname] = total + 1
 			} else {
 				bc.scores[teamname] = 1
 			}
 
+			// Increment main chain score
 			if pheader.IsMainChain {
 				// Increment team's score
 				if total, ok := bc.mainscores[teamname]; ok {
 					bc.mainscores[teamname] = total + 1
 				} else {
 					bc.mainscores[teamname] = 1
+				}
+			}
+
+			// Increment ever in main chain score
+			if pheader.EverMainChain {
+				// Increment team's score
+				if total, ok := bc.everscores[teamname]; ok {
+					bc.everscores[teamname] = total + 1
+				} else {
+					bc.everscores[teamname] = 1
 				}
 			}
 		}
@@ -280,6 +294,7 @@ func (bc *blockchain) extendChain(ph *processedHeader, b coin.Block) error {
 
 	if ph.BlockHeight == 0 {
 		ph.IsMainChain = true
+		ph.EverMainChain = true
 
 	} else if ph.TotalDifficulty > bc.head.TotalDifficulty {
 		if err := bc.forkMainChain(ph, b, batch); err != nil {
@@ -373,6 +388,7 @@ func (bc *blockchain) forkMainChain(ph *processedHeader, b coin.Block,
 	// Apply side chain
 	for _, sph := range sideheaders {
 		sph.IsMainChain = true
+		sph.EverMainChain = true
 
 		headerBytes, err := json.Marshal(sph)
 		if err != nil {
@@ -388,6 +404,7 @@ func (bc *blockchain) forkMainChain(ph *processedHeader, b coin.Block,
 	}
 
 	ph.IsMainChain = true
+	ph.EverMainChain = true
 
 	return nil
 }

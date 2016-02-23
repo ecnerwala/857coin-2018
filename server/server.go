@@ -96,13 +96,22 @@ func blockHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 type scoreReport struct {
-	MainScores map[string]int `json:"mainchain"`
-	Scores     map[string]int `json:"total"`
+	Height          uint64         `json:"height"`
+	TotalDifficulty uint64         `json:"totaldifficulty"`
+	MainScores      map[string]int `json:"mainchain"`
+	EverScores      map[string]int `json:"everinmainchain"`
+	Scores          map[string]int `json:"total"`
 }
 
 func scoresHandler(w http.ResponseWriter, r *http.Request) {
 	bchain.Lock()
-	sr := scoreReport{bchain.mainscores, bchain.scores}
+	sr := scoreReport{
+		Height:          bchain.head.BlockHeight + 1,
+		TotalDifficulty: bchain.head.TotalDifficulty,
+		MainScores:      bchain.mainscores,
+		EverScores:      bchain.everscores,
+		Scores:          bchain.scores,
+	}
 	j, err := json.MarshalIndent(sr, "", "  ")
 	bchain.Unlock()
 
