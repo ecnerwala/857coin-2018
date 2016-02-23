@@ -63,7 +63,7 @@ getblocktemplate:
 					header.Nonces[1] = ns[1]
 					header.Nonces[2] = i
 
-					if err := submitBlock(*header, coin.Block("")); err != nil {
+					if err := submitBlock(*header, coin.Block("2 Chainz")); err != nil {
 						panic(err)
 					} else {
 						continue getblocktemplate
@@ -127,7 +127,7 @@ func getBlockTemplate() (*coin.Header, error) {
 	header := new(coin.Header)
 	err = json.Unmarshal(body, header)
 
-	header.MerkleRoot = sha256.Sum256([]byte(""))
+	header.MerkleRoot = sha256.Sum256([]byte("2 Chainz"))
 	header.Timestamp = time.Now().UnixNano()
 
 	return header, err

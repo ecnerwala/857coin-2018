@@ -20,7 +20,7 @@
 <blockquote>
 <p><a href="/explore" class="uri">/explore</a></p>
 </blockquote>
-<p>Get information about the longest chain:</p>
+<p>Get information about the team submissions:</p>
 <blockquote>
 <p><a href="/scores" class="uri">/scores</a></p>
 </blockquote>
@@ -28,16 +28,11 @@
 <blockquote>
 <p><code>/block/&lt;hash&gt;</code></p>
 <p>Example: get information about the genesis block:</p>
-<p><a href="/block/ff53b5d58455374ca671ee7e35127fc0e8141b84ee9b8b198f3739f29ea8421c" class="uri">/block/ff53b5d58455374ca671ee7e35127fc0e8141b84ee9b8b198f3739f29ea8421c</a></p>
+<p><a href="/block/87b09e7cb98729b8c2a86c1c8b32292e8102754af247e39047234b596e843c89" class="uri">/block/ff53b5d58455374ca671ee7e35127fc0e8141b84ee9b8b198f3739f29ea8421c</a></p>
 </blockquote>
-<p>Get the parentid, difficulty, and version of a block that would extend the main chain (as JSON):</p>
+<p>Get a template for the next header to mine (as JSON):</p>
 <blockquote>
-<p><code>/next</code></p>
-<p>You may periodically query <code>/next</code> to ensure you are mining the latest block.</p>
-</blockquote>
-<p>Get the head of the blockchain (as JSON):</p>
-<blockquote>
-<p><a href="/head" class="uri">/head</a></p>
+<p><a href="/next" class="uri">/head</a></p>
 </blockquote>
 <p>Add a block to the blockchain:</p>
 <blockquote>
@@ -46,10 +41,11 @@
 {
   &quot;header&quot; : {
     &quot;parentid&quot;: &quot;&lt;hash&gt;&quot;,
-    &quot;root&quot;: &quot;&lt;hash&gt;&quot;, (the merkle root, for now just the hash of the block data string)
+    &quot;root&quot;: &quot;&lt;hash&gt;&quot;, (the merkle root, for now just the SHA256 hash of the block data string)
+    &quot;difficulty&quot;: &lt;uint64&gt;,
+    &quot;timestamp&quot;: &lt;uint64&gt;,
     &quot;nonces&quot;: [uint64,uint64,uint64],
-    &quot;difficulty&quot;: &lt;uint64&gt;
-    &quot;version&quot;: &lt;byte&gt;
+    &quot;version&quot;: &lt;byte&gt;,
   },
   &quot;block&quot; : &quot;&lt;string&gt;&quot; (the block contents, i.e. your team members separated by commas)
 }</code></pre>
@@ -72,12 +68,13 @@
 </blockquote>
 <p>For a block B to be accepted into the blockchain, the following must be true:</p>
 <ul>
-<li><code>B.parentid</code> is the Hash of a block P in the blockchain</li>
+<li><code>B.parentid</code> is the SHA256 Hash of a header in the blockchain</li>
 <li><code>B.root</code> is the SHA256 hash of the block contents</li>
 <li><code>H(B,0) = H(B,1) = H(B,2) (mod 2^d), nonce1 != nonce2 != nonce3</code></li>
-<li><code>B.timestamp</code> must be less than 2 minutes old.</li>
+<li><code>B.timestamp</code> must be less than 2 minutes off from server.</li>
 </ul>
-<p>Difficulty will be retargeted on a daily basis: make sure you start early!</p>
+<p>The target block interval is 10 minutes. Difficulty will be retargeted every
+144 blocks: make sure you start early!</p>
 <h2 id="rules">Rules</h2>
 <ul>
 <li>Do not seek outside help to mine blocks.</li>

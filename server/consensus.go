@@ -292,9 +292,10 @@ func (bc *blockchain) extendChain(ph *processedHeader, b coin.Block) error {
 		return err
 	}
 
+	headerTime := time.Unix(0, ph.Header.Timestamp)
 	if !ph.IsMainChain {
-		log.Printf("[Side Chain] height: %d diff: %d id: %s time: %d\n",
-			ph.BlockHeight, ph.TotalDifficulty, ph.Header.Sum(), ph.Header.Timestamp)
+		log.Printf("[Side Chain] height: %d diff: %d id: %s time: %s\n",
+			ph.BlockHeight, ph.TotalDifficulty, ph.Header.Sum(), headerTime)
 		return nil
 	}
 
@@ -302,8 +303,8 @@ func (bc *blockchain) extendChain(ph *processedHeader, b coin.Block) error {
 		return err
 	}
 
-	log.Printf("[Main Chain] height: %d diff: %d id: %s time: %d\n",
-		ph.BlockHeight, ph.TotalDifficulty, ph.Header.Sum(), ph.Header.Timestamp)
+	log.Printf("[Main Chain] height: %d diff: %d id: %s time: %s\n",
+		ph.BlockHeight, ph.TotalDifficulty, ph.Header.Sum(), header)
 
 	return nil
 }
