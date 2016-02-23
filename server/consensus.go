@@ -32,7 +32,7 @@ var genesisHeader coin.Header
 var (
 	ErrHeaderExhausted = errors.New("exhausted all possible nonces")
 	ErrClockDrift      = errors.New("excessive clock drift")
-	MinimumDifficulty  = uint64(10)
+	MinimumDifficulty  = uint64(36)
 )
 
 type (

@@ -15,9 +15,9 @@ import (
 
 func main() {
 	//prevHash, _ := coin.NewHash("b4acc61d6bee28979e6a936c89e37b324630c885775eeba36e6ae1ecabad4c13")
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(20 * time.Second)
 
-freshNonces:
+getblocktemplate:
 	for {
 		/*
 			header := coin.Header{
@@ -46,12 +46,7 @@ freshNonces:
 		for {
 			select {
 			case <-ticker.C:
-				header, err = getBlockTemplate()
-				if err != nil {
-					fmt.Println("ERROR:", err)
-					return
-				}
-				fmt.Println("Mining at difficulty:", header.Difficulty)
+				continue getblocktemplate
 			default:
 				break
 			}
@@ -71,7 +66,7 @@ freshNonces:
 					if err := submitBlock(*header, coin.Block("")); err != nil {
 						panic(err)
 					} else {
-						continue freshNonces
+						continue getblocktemplate
 					}
 				}
 
