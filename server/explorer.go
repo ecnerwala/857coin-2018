@@ -45,6 +45,7 @@ func NewExplorer(addr string) *explorer {
 	http.HandleFunc("/", indexHandler)
 	http.HandleFunc("/add", addHandler)
 	http.HandleFunc("/next", nextHandler)
+	http.HandleFunc("/head", headHandler)
 	http.HandleFunc("/scores", scoresHandler)
 	http.Handle("/block/", http.StripPrefix("/block/", http.HandlerFunc(blockHandler)))
 

@@ -46,6 +46,19 @@ func nextHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(j)
 }
 
+func headHandler(w http.ResponseWriter, r *http.Request) {
+	bchain.Lock()
+	head := bchain.head
+	bchain.Unlock()
+
+	j, err := json.MarshalIndent(head.Header, "", "  ")
+	if err != nil {
+		httpError(w, http.StatusInternalServerError, "json encoding error: %s", err)
+		return
+	}
+	w.Write(j)
+}
+
 func blockHandler(w http.ResponseWriter, r *http.Request) {
 	h, err := coin.NewHash(r.URL.Path)
 	if err != nil {
