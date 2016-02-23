@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"math/big"
+	"sort"
 	"sync"
 	"time"
 
@@ -178,13 +179,22 @@ func (bc *blockchain) loadHeightToHash() error {
 
 		// Add to heightToHash map if header is in main chain
 		if pheader.IsMainChain {
-			bc.heightToHash[pheader.BlockHeight] = pheader.Header.Sum()
+			id := pheader.Header.Sum()
+			bc.heightToHash[pheader.BlockHeight] = id
+
 			if pheader.BlockHeight > maxHeight {
 				maxHeight = pheader.BlockHeight
 				bc.head = pheader
 			}
 		}
 	}
+
+	// Adjust difficulty?
+	diff, err := bc.currDifficultyTarget()
+	if err != nil {
+		return err
+	}
+	bc.currDifficulty = diff
 
 	fmt.Println("heightToHash initialized:", len(bc.heightToHash))
 
@@ -210,10 +220,20 @@ func (bc *blockchain) AddBlock(h coin.Header, b coin.Block) error {
 		return err
 	}
 
+	return bc.extendChain(ph, b)
+}
+
+func (bc *blockchain) extendChain(ph *processedHeader, b coin.Block) error {
 	batch := &db.Batch{}
-	remap := make(map[uint32]coin.Hash)
-	if ph.TotalDifficulty > bc.head.TotalDifficulty {
-		if err := bc.swapMainFork(ph, batch, remap); err != nil {
+
+	currHeight := bc.head.BlockHeight
+	forkHeight := uint64(0)
+
+	if ph.BlockHeight == 0 {
+		ph.IsMainChain = true
+
+	} else if ph.TotalDifficulty > bc.head.TotalDifficulty {
+		if forkHeight, err := bc.forkMainChain(ph, b, batch); err != nil {
 			return err
 		}
 	}
@@ -223,8 +243,8 @@ func (bc *blockchain) AddBlock(h coin.Header, b coin.Block) error {
 		return err
 	}
 
+	// Write current header and block
 	id := ph.Header.Sum()
-
 	hid := bucket(HeaderBucket, id)
 	bid := bucket(BlockBucket, id)
 	batch.Put(hid, headerBytes)
@@ -234,47 +254,31 @@ func (bc *blockchain) AddBlock(h coin.Header, b coin.Block) error {
 		return err
 	}
 
-	if ph.IsMainChain {
-		for height, hash := range remap {
-			bc.heightToHash[height] = hash
-		}
-		bc.heightToHash[ph.BlockHeight] = ph.Header.Sum()
-		bc.head = *ph
-
-		log.Printf("[Update Tip] height: %d diff: %d id: %s\n", ph.BlockHeight,
-			ph.TotalDifficulty, ph.Header.Sum())
-
-		// Adjust difficulty?
-		diff, err := bc.newDifficultyTarget()
-		if err != nil {
-			return err
-		}
-		bc.currDifficulty = diff
-	} else {
+	if !ph.IsMainChain {
 		log.Printf("[Block Recorded] height: %d diff: %d id: %s\n", ph.BlockHeight,
 			ph.TotalDifficulty, ph.Header.Sum())
+		return nil
 	}
+
+	if err := bc.loadHeightToHash(); err != nil {
+		return err
+	}
+
+	log.Printf("[Update Tip] height: %d diff: %d id: %s\n", ph.BlockHeight,
+		ph.TotalDifficulty, ph.Header.Sum())
 
 	return nil
 }
 
-func (bc *blockchain) swapMainFork(ph *processedHeader, batch *db.Batch,
-	remap map[uint32]coin.Hash) error {
-
+func (bc *blockchain) forkMainChain(ph, b, batch) (uint64, error) {
 	// Find most recent fork with main chain, starting from ph.  Memoize
 	// intermediate headers
-
-	if ph.BlockHeight == 0 {
-		ph.IsMainChain = true
-		return nil
-	}
-
 	sideheaders := []processedHeader{}
 	sideph := *ph
 	for {
 		tempph, err := bc.getHeader(sideph.Header.ParentID)
 		if err != nil {
-			return err
+			return 0, err
 		}
 		sideph = *tempph
 
@@ -290,25 +294,27 @@ func (bc *blockchain) swapMainFork(ph *processedHeader, batch *db.Batch,
 	for i := bc.head.BlockHeight; i > sideph.BlockHeight; i-- {
 		id, ok := bc.heightToHash[i]
 		if !ok {
-			return ErrNoBlockAtHeight(i)
+			return 0, ErrNoBlockAtHeight(i)
 		}
 
 		mainph, err := bc.getHeader(id)
 		if err != nil {
-			return err
+			return 0, err
 		}
 
 		mainheaders = append(mainheaders, *mainph)
 	}
 
+	sort.Reverse(sideheaders)
+	sort.Reverse(mainheaders)
+
 	// Revert main chain
-	for i := len(mainheaders) - 1; i >= 0; i-- {
-		mph := mainheaders[i]
+	for _, mph := range mainheaders {
 		mph.IsMainChain = false
 
 		headerBytes, err := json.Marshal(mph)
 		if err != nil {
-			return err
+			return 0, err
 		}
 
 		id := bucket(HeaderBucket, mph.Header.Sum())
@@ -316,39 +322,40 @@ func (bc *blockchain) swapMainFork(ph *processedHeader, batch *db.Batch,
 	}
 
 	// Apply side chain
-	for i := len(sideheaders) - 1; i >= 0; i-- {
-		sph := sideheaders[i]
+	for _, sph := range sideheaders {
 		sph.IsMainChain = true
 
 		headerBytes, err := json.Marshal(sph)
 		if err != nil {
-			return err
+			return 0, err
 		}
 
-		id := sph.Header.Sum()
 		hid := bucket(HeaderBucket, sph.Header.Sum())
 		batch.Put(hid, headerBytes)
-
-		remap[sph.BlockHeight] = id
 	}
 
-	fmt.Println("Forking:", len(mainheaders), len(sideheaders))
-
+	fmt.Printf("[Fork] main: %d, side %d\n", len(mainheaders), len(sideheaders))
 	ph.IsMainChain = true
 
-	return nil
+	return sideph.BlockHeight + 1, nil
 }
 
 /*
  * Difficulty Retargeting
  */
 
-func (s *blockchain) newDifficultyTarget() (uint64, error) {
-	if s.head.BlockHeight%difficultyRetargetWindow != difficultyRetargetWindow-1 {
-		return s.currDifficulty, nil
+func (s *blockchain) currDifficultyTarget() (uint64, error) {
+	if s.head.BlockHeight < difficultyRetargetWindow-1 {
+		return s.head.Header.Difficulty
 	}
 
-	pastHeaderHeight := 1 + s.head.BlockHeight - difficultyRetargetWindow
+	retargetOffset = s.head.BlockHeight % difficultyRetargetWindow
+	pastHeaderHeight := s.head.BlockHeight - retargetOffset
+
+	if s.head.BlockHeight%difficultyRetargetWindow == difficultyRetargetWindow-1 {
+		pastHeaderHeight -= 1 + difficultyRetargetWindow
+	}
+
 	pastHeaderID, ok := s.heightToHash[pastHeaderHeight]
 	if !ok {
 		return 0, fmt.Errorf("unknown retargeting ID")
@@ -359,18 +366,24 @@ func (s *blockchain) newDifficultyTarget() (uint64, error) {
 		return 0, fmt.Errorf("unknown retargeting header")
 	}
 
+	if s.head.BlockHeight%difficultyRetargetWindow != difficultyRetargetWindow-1 {
+		return pastHeader.Header.Difficulty, nil
+	}
+
 	head := s.head.Header
 	//	Convert to seconds
 	windowTime := (head.Timestamp - pastHeader.Header.Timestamp) * int64(time.Second) / int64(time.Millisecond)
 	windowDifficulty := s.head.Header.Difficulty
 
 	newDiffMin := uint64(targetBlockInterval) * windowDifficulty / uint64(windowTime)
+
 	// Clamp to maximum of 4x increase/decrease
 	if newDiffMin > 4*windowDifficulty {
 		newDiffMin = 4 * windowDifficulty
 	} else if newDiffMin < windowDifficulty/4 {
 		newDiffMin = windowDifficulty / 4
 	}
+
 	// Increase by 1.5 to predict increase in mining activity
 	newDiffMin = 3 * newDiffMin / 2
 
@@ -383,13 +396,7 @@ func findNextPrime(nmin uint64) (uint64, error) {
 		if n.ProbablyPrime(4) {
 			return n.Uint64(), nil
 		}
-
-		b := make([]byte, 1)
-		if _, err := rand.Read(b); err != nil {
-			return 0, err
-		}
-		bInt := new(big.Int).SetBytes(b)
-		n.Add(n, bInt)
+		n.Add(n, bigOne)
 	}
 }
 
