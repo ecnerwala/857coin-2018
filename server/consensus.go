@@ -1,6 +1,7 @@
 package server
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -104,10 +105,10 @@ func (bc *blockchain) initDB() {
 }
 
 func (bc *blockchain) mineGenesisBlock() error {
+	msg := "Never roll your own crypto."
+
 	gh := coin.Header{
-		MerkleRoot: coin.Hash{0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14, 0x9a, 0xfb,
-			0xf4, 0xc8, 0x99, 0x6f, 0xb9, 0x24, 0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b,
-			0x93, 0x4c, 0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52, 0xb8, 0x55},
+		MerkleRoot: sha256.Sum256([]byte(msg)),
 		Difficulty: MinimumDifficulty,
 		Timestamp:  time.Now().Unix(),
 	}
@@ -121,7 +122,7 @@ func (bc *blockchain) mineGenesisBlock() error {
 				if nil == gh.Valid("") {
 					fmt.Println("genesis header found:", gh)
 					genesisHeader = gh
-					return bc.AddBlock(gh, "")
+					return bc.AddBlock(gh, coin.Block(msg))
 				}
 			}
 		}
@@ -189,14 +190,12 @@ func (bc *blockchain) loadHeightToHash() error {
 		}
 	}
 
-	// Adjust difficulty?
+	// Calculate Difficulty
 	diff, err := bc.currDifficultyTarget()
 	if err != nil {
 		return err
 	}
 	bc.currDifficulty = diff
-
-	fmt.Println("heightToHash initialized:", len(bc.heightToHash))
 
 	return nil
 }
@@ -252,8 +251,8 @@ func (bc *blockchain) extendChain(ph *processedHeader, b coin.Block) error {
 	}
 
 	if !ph.IsMainChain {
-		log.Printf("[Block Recorded] height: %d diff: %d id: %s\n", ph.BlockHeight,
-			ph.TotalDifficulty, ph.Header.Sum())
+		log.Printf("[Side Chain] height: %d diff: %d id: %s time: %d\n",
+			ph.BlockHeight, ph.TotalDifficulty, ph.Header.Sum(), ph.Header.Timestamp)
 		return nil
 	}
 
@@ -261,8 +260,8 @@ func (bc *blockchain) extendChain(ph *processedHeader, b coin.Block) error {
 		return err
 	}
 
-	log.Printf("[Update Tip] height: %d diff: %d id: %s\n", ph.BlockHeight,
-		ph.TotalDifficulty, ph.Header.Sum())
+	log.Printf("[Main Chain] height: %d diff: %d id: %s time: %d\n",
+		ph.BlockHeight, ph.TotalDifficulty, ph.Header.Sum(), ph.Header.Timestamp)
 
 	return nil
 }
