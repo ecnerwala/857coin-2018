@@ -424,7 +424,7 @@ func (bc *blockchain) computeDifficulty(h uint64) (uint64, error) {
 	ratio := float64(targetBlockInterval) * float64(difficultyRetargetWindow) / float64(windowTime)
 	logRatio := math.Log2(ratio)
 
-	fmt.Printf("[Difficulty] log2: %f ratio: %f time: %d interval %d\n", logRatio,
+	log.Printf("[Difficulty] log2: %f ratio: %f time: %d interval %d\n", logRatio,
 		ratio, windowTime, targetBlockInterval)
 
 	// Clamp to maximum of 4x increase/decrease
