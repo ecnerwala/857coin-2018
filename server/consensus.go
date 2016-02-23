@@ -36,6 +36,7 @@ var (
 	ErrHeaderExhausted = errors.New("exhausted all possible nonces")
 	ErrClockDrift      = errors.New("excessive clock drift")
 	ErrSpamHeader      = errors.New("header previously submitted")
+	ErrDifficulty      = errors.New("invalid difficulty")
 )
 
 type (
@@ -240,7 +241,7 @@ func (bc *blockchain) loadHeightToHash() error {
 	}
 
 	// Calculate Difficulty
-	diff, err := bc.computeDifficulty(bc.head.BlockHeight)
+	diff, err := bc.computeDifficulty(bc.head.Header.Sum())
 	if err != nil {
 		return err
 	}
@@ -254,6 +255,10 @@ func (bc *blockchain) loadHeightToHash() error {
  */
 
 func (bc *blockchain) AddBlock(h coin.Header, b coin.Block) error {
+	if h.Difficulty < MinimumDifficulty {
+		return ErrDifficulty
+	}
+
 	// Check that timestamp is within 2 minutes of now
 	diff := int64(h.Timestamp) - time.Now().UnixNano()
 	if diff > maxClockDrift || diff < -maxClockDrift {
@@ -413,30 +418,53 @@ func (bc *blockchain) forkMainChain(ph *processedHeader, b coin.Block,
  * Difficulty Retargeting
  */
 
-func (bc *blockchain) computeDifficulty(h uint64) (uint64, error) {
+func (bc *blockchain) computeDifficulty(id coin.Hash) (uint64, error) {
+	if len(bc.heightToHash) == 0 {
+		return MinimumDifficulty, nil
+	}
+
+	pheader, err := bc.getHeader(id)
+	if err != nil {
+		return 0, err
+	}
+
+	h := pheader.BlockHeight
+
 	if h < difficultyRetargetWindow-1 {
-		return bc.head.Header.Difficulty, nil
+		return MinimumDifficulty, nil
 	}
 
 	retargetOffset := h % difficultyRetargetWindow
 	pastHeaderHeight := h - retargetOffset
 
-	pastHeaderID, ok := bc.heightToHash[pastHeaderHeight]
-	if !ok {
-		return 0, fmt.Errorf("unknown retargeting ID")
+	var pastHeaderID coin.Hash
+	for pheader.BlockHeight > pastHeaderHeight {
+		if mainID, ok := bc.heightToHash[pheader.BlockHeight]; ok {
+			if pheader.Header.Sum() == mainID {
+				pastHeaderID = bc.heightToHash[pastHeaderHeight]
+				break
+			}
+		}
+
+		pheader, err = bc.getHeader(pheader.Header.ParentID)
+		if err != nil {
+			return 0, err
+		}
 	}
 
-	pastHeader, err := bc.getHeader(pastHeaderID)
-	if err != nil {
-		return 0, fmt.Errorf("unknown retargeting header")
+	if pheader.BlockHeight != pastHeaderHeight {
+		pheader, err = bc.getHeader(pastHeaderID)
+		if err != nil {
+			return 0, err
+		}
 	}
 
 	if h%difficultyRetargetWindow != difficultyRetargetWindow-1 {
-		return pastHeader.Header.Difficulty, nil
+		return pheader.Header.Difficulty, nil
 	}
 
 	head := bc.head.Header
-	windowTime := head.Timestamp - pastHeader.Header.Timestamp
+	windowTime := head.Timestamp - pheader.Header.Timestamp
 
 	ratio := float64(targetBlockInterval) * float64(difficultyRetargetWindow) / float64(windowTime)
 	logRatio := math.Log2(ratio)
@@ -445,7 +473,7 @@ func (bc *blockchain) computeDifficulty(h uint64) (uint64, error) {
 		ratio, windowTime, targetBlockInterval)
 
 	// Clamp to maximum of 4x increase/decrease
-	newDifficulty := bc.head.Header.Difficulty
+	newDifficulty := pheader.Header.Difficulty
 	if logRatio > 2 {
 		newDifficulty += 2
 	} else if logRatio < -2 {
@@ -482,6 +510,15 @@ func (bc *blockchain) processHeader(h coin.Header) (*processedHeader, error) {
 		prevHeader, err := bc.getHeader(h.ParentID)
 		if err != nil {
 			return nil, err
+		}
+
+		targetDiff, err := bc.computeDifficulty(h.ParentID)
+		if err != nil {
+			return nil, err
+		}
+
+		if h.Difficulty < targetDiff {
+			return nil, ErrDifficulty
 		}
 
 		return &processedHeader{
