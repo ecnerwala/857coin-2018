@@ -96,6 +96,10 @@ func (e *explorer) update() error {
 			return err
 		}
 
+		if pheader.BlockHeight > totalHeight {
+			continue
+		}
+
 		parentID := pheader.Header.ParentID
 
 		hash := pheader.Header.Sum()
