@@ -13,13 +13,11 @@ import (
 func addHandler(w http.ResponseWriter, r *http.Request) {
 	req := new(compositeBlock)
 	if err := json.NewDecoder(r.Body).Decode(req); err != nil {
-		fmt.Println("JSON DECODE FAIL")
 		httpError(w, http.StatusBadRequest, "error parsing block json: %s", err)
 		return
 	}
 
 	if err := bchain.AddBlock(req.Header, req.Block); err != nil {
-		fmt.Println("ADD BLOCK FAIL")
 		httpError(w, http.StatusBadRequest, "failed to add block: %s", err)
 		return
 	}
