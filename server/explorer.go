@@ -85,6 +85,7 @@ func (e *explorer) update() error {
 	height := bchain.head.BlockHeight
 
 	bchain.Lock()
+	totalHeight := bchain.head.BlockHeight
 	iter := bchain.db.NewIterator(util.BytesPrefix([]byte(HeaderBucket)), nil)
 	for iter.Next() {
 		// Load header
@@ -119,7 +120,7 @@ func (e *explorer) update() error {
 		}
 
 		fmt.Fprintf(nodes, "{id:'%x',level:%d,label:'%s',color:'%s'},\n",
-			hash[:], pheader.BlockHeight, label, color)
+			hash[:], totalHeight-pheader.BlockHeight, label, color)
 		fmt.Fprintf(edges, "{from:'%x',to:'%x',color:'%s'},\n",
 			parentID, hash[:], color)
 	}
