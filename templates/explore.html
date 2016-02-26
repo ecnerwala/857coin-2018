@@ -67,7 +67,7 @@ Newer blocks appear at the top.
   network.on('select', function (properties) {
     if (properties.nodes.length > 0) {
         node = properties.nodes[0];
-        window.location.href = '/block/' + node;
+        window.open('/block/' + node, '_blank');
     }
   });
 </script>
