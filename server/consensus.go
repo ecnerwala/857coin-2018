@@ -56,6 +56,17 @@ type (
 		db *db.DB
 	}
 
+	exploreBlock struct {
+		ID              coin.Hash   `json:"id"`
+		Header          coin.Header `json:"header"`
+		Block           coin.Block  `json:"block"`
+		BlockHeight     uint64      `json:"blockheight"`
+		IsMainChain     bool        `json:"ismainchain"`
+		EverMainChain   bool        `json:"evermainchain"`
+		TotalDifficulty uint64      `json:"totaldiff"`
+		Timestamp       time.Time   `json:"timestamp"`
+	}
+
 	compositeBlock struct {
 		Header coin.Header `json:"header"`
 		Block  coin.Block  `json:"block"`
