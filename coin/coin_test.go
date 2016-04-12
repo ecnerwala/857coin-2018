@@ -3,48 +3,44 @@ package coin
 import (
 	"fmt"
 	"testing"
-	"time"
 )
 
 var (
-	ts, _ = time.Parse(time.RFC3339, "2016-02-21T12:08:41+00:00")
+	ts = int64(1460392042611995593)
 )
 
-func TestVerifyPoW(t *testing.T) {
+func TestValidPoW(t *testing.T) {
 	tests := []struct {
-		diff    uint64
-		nonces  [NumCollisions]uint32
-		verfies bool
+		diff   uint64
+		nonces [NumCollisions]uint64
+		err    error
 	}{
 		{
-			diff:    7,
-			nonces:  [NumCollisions]uint32{0, 0, 0},
-			verfies: true,
+			diff:   5,
+			nonces: [NumCollisions]uint64{13, 17, 25},
 		},
 		{
-			diff:    7,
-			nonces:  [NumCollisions]uint32{1, 1, 1},
-			verfies: false,
+			diff:   5,
+			nonces: [NumCollisions]uint64{22, 31, 15},
 		},
 		{
-			diff:    7,
-			nonces:  [NumCollisions]uint32{1, 2, 3},
-			verfies: false,
+			diff:   5,
+			nonces: [NumCollisions]uint64{17, 29, 25},
 		},
 		{
-			diff:    7,
-			nonces:  [NumCollisions]uint32{4, 4, 4},
-			verfies: true,
+			diff:   5,
+			nonces: [NumCollisions]uint64{0, 0, 0},
+			err:    ErrInvalidPoW,
 		},
 		{
-			diff:    7,
-			nonces:  [NumCollisions]uint32{4, 5, 3},
-			verfies: false,
+			diff:   5,
+			nonces: [NumCollisions]uint64{4, 4, 4},
+			err:    ErrInvalidPoW,
 		},
 		{
-			diff:    7,
-			nonces:  [NumCollisions]uint32{6, 2, 1},
-			verfies: true,
+			diff:   5,
+			nonces: [NumCollisions]uint64{6, 2, 1},
+			err:    ErrInvalidPoW,
 		},
 	}
 
@@ -55,25 +51,10 @@ func TestVerifyPoW(t *testing.T) {
 			Nonces:     test.nonces,
 		}
 
-		check := header.verifyPoW()
-		if check != test.verfies {
-			fmt.Errorf("[TestVerifyPoW] test #%d -- unexpected behavior: "+
-				"want %s, got %s", i, test.verfies, check)
-		}
-	}
-
-	for i := uint32(0); i < 49979687; i++ {
-		for j := uint32(0); j < 49979687; j++ {
-			for k := uint32(0); k < 49979687; k++ {
-				header := Header{
-					Difficulty: 49979687,
-					Timestamp:  ts,
-					Nonces:     [NumCollisions]uint32{i, j, k},
-				}
-				if header.verifyPoW() {
-					fmt.Println("Found collision:", i, j, k)
-				}
-			}
+		check := header.validPoW()
+		if check != test.err {
+			t.Error(fmt.Errorf("[TestValidPoW] test #%d -- unexpected behavior: "+
+				"want %s, got %s", i, test.err, check))
 		}
 	}
 }
