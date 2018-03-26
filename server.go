@@ -4,7 +4,7 @@ import (
 	"flag"
 	"runtime"
 
-	"github.com/cfromknecht/857coin/server"
+	"./server"
 )
 
 var (

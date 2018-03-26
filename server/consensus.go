@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cfromknecht/857coin/coin"
+	"../coin"
 	db "github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/util"
 )
