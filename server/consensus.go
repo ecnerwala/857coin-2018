@@ -22,7 +22,7 @@ const (
 	difficultyRetargetWindow = uint64(difficultyRetargetLength / targetBlockInterval)
 	maxClockDrift            = 10 * 60 * 1000 * 1000 * 1000 // 10 minutes
 
-	BlockchainPath = "blockchain.db"
+	BlockchainPath = "/tmp/blockchain.db" // TODO: Change back when deploy
 
 	HeaderBucket = "HEADER-"
 	BlockBucket  = "BLOCK-"
