@@ -22,12 +22,12 @@ const (
 	difficultyRetargetWindow = uint64(difficultyRetargetLength / targetBlockInterval)
 	maxClockDrift            = 10 * 60 * 1000 * 1000 * 1000 // 10 minutes
 
-	BlockchainPath = "/tmp/blockchain.db" // TODO: Change back when deploy
+	BlockchainPath = "blockchain.db" // TODO: Change back when deploy
 
 	HeaderBucket = "HEADER-"
 	BlockBucket  = "BLOCK-"
 
-	MinimumDifficulty = uint64(32)
+	MinimumDifficulty = uint64(86)
 )
 
 var genesisHeader coin.Header
@@ -127,47 +127,24 @@ func (bc *blockchain) mineGenesisBlock() error {
 	genesisHeader = coin.Header{
 		MerkleRoot: sha256.Sum256([]byte(msg)),
 		Difficulty: MinimumDifficulty,
+		Timestamp: time.Now().UnixNano(),
 	}
 
-	// Calculate modulus
-	dInt := new(big.Int).SetUint64(genesisHeader.Difficulty)
-	mInt := new(big.Int).SetUint64(2)
-	mInt.Exp(mInt, dInt, nil)
-
-	ticker := time.NewTicker(90 * time.Second)
-
-getblocktemplate:
-	genesisHeader.Timestamp = time.Now().UnixNano()
-	hashMap := make(map[uint64][]uint64)
-	i := uint64(0)
-	for {
-		select {
-		case <-ticker.C:
-			goto getblocktemplate
-		default:
-			break
-		}
-
-		genesisHeader.Nonces[0] = i
-		aHash := genesisHeader.SumNonce(0)
-		aInt := new(big.Int).SetBytes(aHash[:])
-		aInt.Mod(aInt, mInt)
-
-		a := aInt.Uint64()
-		if ns, ok := hashMap[a]; ok {
-			if len(ns) == 2 {
-				genesisHeader.Nonces[0] = ns[0]
-				genesisHeader.Nonces[1] = ns[1]
-				genesisHeader.Nonces[2] = i
-
+	A, B := genesisHeader.ComputeAAndB()
+	aesA := make([]*big.Int, 0)
+	aesB := make([]*big.Int, 0)
+  for i := uint64(0); i >= 0; i++ {
+		aesA = append(aesA, coin.ComputeAES(A, i))
+		aesB = append(aesB, coin.ComputeAES(B, i))
+		for j := uint64(0); j < i; j++ {
+			if coin.ComputeHammingCloseness(aesA[i], aesA[j], aesB[i], aesB[j]) >= genesisHeader.Difficulty {
+				genesisHeader.Nonces[1] = i
+				genesisHeader.Nonces[2] = j
 				return bc.AddBlock(genesisHeader, b)
 			}
-			hashMap[a] = append(ns, i)
-		} else {
-			hashMap[a] = []uint64{i}
 		}
-		i++
 	}
+	return nil
 }
 
 func (bc *blockchain) loadScores() error {

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="generator" content="pandoc">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-  <title>857Coin</title>
+  <title>6857Coin</title>
   <style type="text/css">code{white-space: pre;}</style>
   <!--[if lt IE 9]>
     <script src="http://html5shim.googlecode.com/svn/trunk/html5.js"></script>
@@ -13,7 +13,7 @@
 </head>
 <body>
 <header>
-<h1 class="title">857Coin</h1>
+<h1 class="title">6857Coin</h1>
 </header>
 <h2 id="api">API</h2>
 <p>Explore the blockchain:</p>
@@ -29,7 +29,7 @@
 <p><code>/block/&lt;hash&gt;</code></p>
 <p>Example: get information about the genesis block:</p>
 <p><a
-href="/block/169740d5c4711f3cbbde6b9bfbbe8b3d236879d849d1c137660fce9e7884cae7" class="uri">/block/169740d5c4711f3cbbde6b9bfbbe8b3d236879d849d1c137660fce9e7884cae7</a></p>
+href="/block/7d2034a21cf5ed6642260567e661a3b063a59c8551eab5f2118588f79554c325" class="uri">/block/7d2034a21cf5ed6642260567e661a3b063a59c8551eab5f2118588f79554c325</a></p>
 </blockquote>
 <p>Get a template for the next header to mine (as JSON):</p>
 <blockquote>
@@ -53,26 +53,30 @@ href="/block/169740d5c4711f3cbbde6b9bfbbe8b3d236879d849d1c137660fce9e7884cae7" c
 <p>To add a block, send a POST request to <code>/add</code> with the JSON block data in the request body. The block must satisfy the proof-of-work scheme described below.</p>
 </blockquote>
 <h2 id="proof-of-work">Proof of Work</h2>
-<p>Note that our three-collision proof of work requires three hashes (each using one of the three unique nonces).</p>
-<p>The hash of a block is the SHA-256 hash of the concatenation of the following data:</p>
+<p>Our AESHAM2 proof-of-work requires three nonces. For a block B to be added into the blockchain, it must be accepted by the following algorithm.</p>
+<p>First, we compute a 256-bit AES key, seed, using the fist nonce, <code>B.nonces[0]</code>. It is going to be the SHA-256 hash of the concatenation of the following data:</p>
 <ul>
 <li>the bytes of parentid interpreted as a 32-byte number</li>
 <li>the bytes of root interpreted as a 32-byte number</li>
 <li>the 8 bytes of difficulty in big-endian order</li>
 <li>the 8 bytes of timestamp in big-endian order</li>
-<li>the 8 bytes of the individual nonce in big-endian order</li>
+<li>the 8 bytes of the first nonce in big-endian order</li>
 <li>the single version byte</li>
 </ul>
 <p>In other words:</p>
 <blockquote>
-<p><code>Hash(B, i) = SHA256(HexDecode(B.parentid) + HexDecode(B.root) + Bytes(B.difficulty) + Bytes(B.timestamp) + Bytes(B.nonces[i]) + B.version)</code></p>
+<p><code>seed = SHA256(HexDecode(B.parentid) + HexDecode(B.root) + Bytes(B.difficulty) + Bytes(B.timestamp) + Bytes(B.nonces[0]) + B.version)</code></p>
 </blockquote>
+<p>Second, we compute another 256-bit AES key, seed2, using the seed we just computed: <code>seed2 = SHA256(HexDecode(seed))</code>. Note that both seed and seed2 are interpreted as 32-byte numbers.</p>
+<p>We then define <code>A(*) = AES(seed, *)</code> and <code>B(*) = AES(seed2, *)</code>. Let i, j be <code>B.nonces[1]</code> and <code>B.nonces[2]</code> in big-endian order repectively, and padded with leading 0's.
+
 <p>For a block B to be accepted into the blockchain, the following must be true:</p>
 <ul>
-<li><code>B.parentid</code> is the SHA256 Hash of a header in the blockchain</li>
-<li><code>B.root</code> is the SHA256 hash of the block contents</li>
-<li><code>H(B,0) = H(B,1) = H(B,2) (mod 2^d), nonce1 != nonce2 != nonce3</code></li>
+<li><code>B.parentid</code> is the SHA256 Hash of a header in the blockchain.</li>
+<li><code>B.root</code> is the SHA256 hash of the block contents.</li>
+<li><code>B.difficulty >= MinimumDifficulty = 86</code>.</li>
 <li><code>B.timestamp</code> must be less than 2 minutes off from server.</li>
+<li><code>i != j</code> and the hamming distance <code>Dist(A(i) + B(j) mod 2<sup>128</sup>, A(j) + B(i) mod 2<sup>128</sup>) <= 128 - B.difficulty</code>.
 </ul>
 <p>The target block interval is 10 minutes. Difficulty will be retargeted every
 144 blocks: make sure you start early!</p>

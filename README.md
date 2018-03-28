@@ -1,32 +1,28 @@
 # 6.857Coin
 
-This is the blockchain server for 6.857Coin, a simple digital coin
-I made to teach the [6.857](http://courses.csail.mit.edu/6.857/2015/)
-security class about blockchains.
+This is the blockchain server for 6.857Coin, a simple digital coin.
 
-The server is (was) running at: http://6857coin.csail.mit.edu
+This project was started by David back in 2015.
+
+2015 repo: https://github.com/davidlazar/6.857coin
+2016 repo: https://github.com/cfromknecht/857coin
+2017 repo: https://github.com/dpxcc/857coin-2017
+2018 repo: https://github.com/dpxcc/857coin-2018
 
 ## Usage
 
-1. Install (assuming `GOPATH=~/go`):
-
-        $ go get github.com/davidlazar/6.857coin/...
+1. Install:
+   
+        $ git clone https://github.com/dpxcc/857coin-2018.git
+        $ go get github.com/syndtr/goleveldb/...
 
 2. Create required directories:
 
+        $ cd 857coin-2018
         $ mkdir logs blocks
-
-3. Create the genesis block:
-
-        $ cat blocks/genesis.block
-        {
-          "Contents": "Genesis",
-          "Nonce": 0,
-          "Length": 0
-        }
 
 4. Run the blockchain server:
 
-        $ ~/go/bin/coin-server
+        $ go run server.go
 
 5. Build a miner using the API described at http://localhost:8080
