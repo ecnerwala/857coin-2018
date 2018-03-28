@@ -19,7 +19,7 @@ This project was started by David back in 2015.
 2. Create required directories:
 
         $ cd 857coin-2018
-        $ mkdir logs blocks
+        $ mkdir logs
 
 4. Run the blockchain server:
 
