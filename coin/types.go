@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strings"
 )
 
 var (
@@ -119,24 +120,14 @@ func ComputeHammingCloseness(Ai, Aj, Bi, Bj *big.Int) uint64 {
 	AiBj := new(big.Int).SetUint64(0)
 	AiBj.Add(Ai, Bj)
 	AiBj.Mod(AiBj, mod)
-  AjBi := new(big.Int).SetUint64(0)
+	AjBi := new(big.Int).SetUint64(0)
 	AjBi.Add(Aj, Bi)
 	AjBi.Mod(AjBi, mod)
 
 	xor := new(big.Int).SetUint64(0)
 	xor.Xor(AiBj, AjBi)
-	a := xor.Bytes()
-	d := uint64(0)
-	for _, x := range a {
-		for j := 0; j < 8; j++ {
-			if x % 2 == 0 {
-				d += 1
-			}
-			x /= 2
-		}
-	}
-
-	return d
+	s := fmt.Sprintf("%0128b", xor)
+	return uint64(strings.Count(s, "0"))
 }
 
 func (h *Header) Valid(b Block) error {
