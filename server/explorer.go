@@ -118,7 +118,6 @@ func (e *explorer) executeTemplate() ([]byte, error) {
 		fmt.Fprintf(edges, "{from:'%s',to:'%x',color:'%s'},\n",
 			parentID, hash[:], color)
 	}
-	bchain.loadScores()
 	bchain.Unlock()
 
 	data := &explorerTemplateData{

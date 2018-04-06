@@ -146,40 +146,23 @@ func (bc *blockchain) loadScores() error {
 			return err
 		}
 
-		// Add to score map if version 0
-		if pheader.Header.Version == 0 {
-			// Load block data and convert to string
-			teamname, err := bc.getBlock(pheader.Header.Sum())
-			if err != nil {
-				continue
-			}
+		// Load block data and convert to string
+		teamname, err := bc.getBlock(pheader.Header.Sum())
+		if err != nil {
+			continue
+		}
 
-			// Increment total score
-			if total, ok := bc.scores[teamname]; ok {
-				bc.scores[teamname] = total + 1
-			} else {
-				bc.scores[teamname] = 1
-			}
+		// Increment total score
+		bc.scores[teamname]++
 
-			// Increment main chain score
-			if pheader.IsMainChain {
-				// Increment team's score
-				if total, ok := bc.mainscores[teamname]; ok {
-					bc.mainscores[teamname] = total + 1
-				} else {
-					bc.mainscores[teamname] = 1
-				}
-			}
+		// Increment main chain score
+		if pheader.IsMainChain {
+			bc.mainscores[teamname]++
+		}
 
-			// Increment ever in main chain score
-			if pheader.EverMainChain {
-				// Increment team's score
-				if total, ok := bc.everscores[teamname]; ok {
-					bc.everscores[teamname] = total + 1
-				} else {
-					bc.everscores[teamname] = 1
-				}
-			}
+		// Increment ever in main chain score
+		if pheader.EverMainChain {
+			bc.everscores[teamname]++
 		}
 	}
 
@@ -263,7 +246,12 @@ func (bc *blockchain) AddBlock(h coin.Header, b coin.Block) error {
 		return err
 	}
 
-	return bc.extendChain(ph, b)
+	err = bc.extendChain(ph, b)
+	if err != nil {
+		// Attempt to fix up scores, if we failed to extend
+		bc.loadScores()
+	}
+	return err
 }
 
 func (bc *blockchain) extendChain(ph *processedHeader, b coin.Block) error {
@@ -290,6 +278,15 @@ func (bc *blockchain) extendChain(ph *processedHeader, b coin.Block) error {
 	bid := bucket(BlockBucket, id)
 	batch.Put(hid, headerBytes)
 	batch.Put(bid, []byte(b))
+
+	teamname := string(b)
+	bc.scores[teamname]++
+	if ph.IsMainChain {
+		bc.mainscores[teamname]++
+	}
+	if ph.EverMainChain {
+		bc.everscores[teamname]++
+	}
 
 	if err := bc.db.Write(batch, nil); err != nil {
 		return err
@@ -360,10 +357,21 @@ func (bc *blockchain) forkMainChain(ph *processedHeader, b coin.Block,
 
 		id := bucket(HeaderBucket, mph.Header.Sum())
 		batch.Put(id, headerBytes)
+
+		teamname, err := bc.getBlock(mph.Header.Sum())
+		if err != nil {
+			continue
+		}
+		bc.mainscores[teamname]--
+		if bc.mainscores[teamname] == 0 {
+			delete(bc.mainscores, teamname)
+		}
 	}
 
 	// Apply side chain
 	for _, sph := range sideheaders {
+		wasEverMainChain := sph.EverMainChain
+
 		sph.IsMainChain = true
 		sph.EverMainChain = true
 
@@ -374,6 +382,15 @@ func (bc *blockchain) forkMainChain(ph *processedHeader, b coin.Block,
 
 		hid := bucket(HeaderBucket, sph.Header.Sum())
 		batch.Put(hid, headerBytes)
+
+		teamname, err := bc.getBlock(sph.Header.Sum())
+		if err != nil {
+			continue
+		}
+		bc.mainscores[teamname]++
+		if !wasEverMainChain {
+			bc.everscores[teamname]++
+		}
 	}
 
 	if len(mainheaders) != 0 && len(sideheaders) != 0 {
@@ -479,7 +496,6 @@ func (bc *blockchain) processHeader(h coin.Header) (*processedHeader, error) {
 			Header:          h,
 			BlockHeight:     0,
 			TotalDifficulty: h.Difficulty,
-			IsMainChain:     true,
 		}, nil
 	} else {
 		// Check that block extends existing header
@@ -501,7 +517,6 @@ func (bc *blockchain) processHeader(h coin.Header) (*processedHeader, error) {
 			Header:          h,
 			BlockHeight:     prevHeader.BlockHeight + 1,
 			TotalDifficulty: prevHeader.TotalDifficulty + h.Difficulty,
-			IsMainChain:     false,
 		}, nil
 	}
 }
