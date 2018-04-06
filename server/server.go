@@ -23,6 +23,7 @@ type (
 		IsMainChain     bool        `json:"ismainchain"`
 		EverMainChain   bool        `json:"evermainchain"`
 		TotalDifficulty uint64      `json:"totaldiff"`
+		NextDifficulty  uint64      `json:"nextdiff"`
 		Timestamp       time.Time   `json:"timestamp"`
 	}
 
@@ -41,6 +42,7 @@ func newExploreBlock(pheader *processedHeader, b coin.Block) *exploreBlock {
 		IsMainChain:     pheader.IsMainChain,
 		EverMainChain:   pheader.EverMainChain,
 		TotalDifficulty: pheader.TotalDifficulty,
+		NextDifficulty:  pheader.NextDifficulty,
 		Timestamp:       time.Unix(0, pheader.Header.Timestamp),
 	}
 }

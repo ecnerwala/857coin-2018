@@ -60,6 +60,7 @@ type (
 		IsMainChain     bool        `json:"ismainchain"`
 		EverMainChain   bool        `json:"evermainchain"`
 		TotalDifficulty uint64      `json:"totaldiff"`
+		NextDifficulty  uint64      `json:"nextdiff"`
 	}
 )
 
@@ -180,12 +181,11 @@ func (bc *blockchain) loadHeightToHash() error {
 		}
 	}
 
-	// Calculate Difficulty
-	diff, err := bc.computeDifficulty(bc.head.Header.Sum())
-	if err != nil {
-		return err
+	if len(bc.heightToHash) == 0 {
+		bc.currDifficulty = MinimumDifficulty
+	} else {
+		bc.currDifficulty = bc.head.NextDifficulty
 	}
-	bc.currDifficulty = diff
 
 	return nil
 }
@@ -392,20 +392,24 @@ func (bc *blockchain) forkMainChain(ph *processedHeader, b coin.Block,
  * Difficulty Retargeting
  */
 
-func (bc *blockchain) computeDifficulty(id coin.Hash) (uint64, error) {
-	if len(bc.heightToHash) == 0 {
-		return MinimumDifficulty, nil
-	}
-
-	header, err := bc.getHeader(id)
-	if err != nil {
-		return 0, err
-	}
+func (bc *blockchain) retargetDifficulty(header *processedHeader) error {
+	var err error
 
 	h := header.BlockHeight
 
-	retargetOffset := h % difficultyRetargetWindow
-	pastHeaderHeight := h - retargetOffset
+	if h%difficultyRetargetWindow != difficultyRetargetWindow-1 {
+		// No need to retarget
+		return nil
+	}
+
+	pastHeaderHeight := h
+	if pastHeaderHeight < difficultyRetargetWindow {
+		// Just use the genesis block as the base if we're computing the first retarget.
+		// This is window is too short by 1, but it's the best we can do.
+		pastHeaderHeight = 0
+	} else {
+		pastHeaderHeight -= difficultyRetargetWindow
+	}
 
 	pastHeader := header
 
@@ -416,7 +420,7 @@ func (bc *blockchain) computeDifficulty(id coin.Hash) (uint64, error) {
 				pastHeaderID := bc.heightToHash[pastHeaderHeight]
 				pastHeader, err = bc.getHeader(pastHeaderID)
 				if err != nil {
-					return 0, err
+					return err
 				}
 				break
 			}
@@ -424,14 +428,8 @@ func (bc *blockchain) computeDifficulty(id coin.Hash) (uint64, error) {
 
 		pastHeader, err = bc.getHeader(pastHeader.Header.ParentID)
 		if err != nil {
-			return 0, err
+			return err
 		}
-	}
-
-	// TODO: this shouldn't be pastHeader's actual difficulty, but the past target difficulty
-	// We should either store past target difficulty or enforce difficulty == targetDifficulty
-	if h%difficultyRetargetWindow != difficultyRetargetWindow-1 {
-		return pastHeader.Header.Difficulty, nil
 	}
 
 	windowTime := header.Header.Timestamp - pastHeader.Header.Timestamp
@@ -440,7 +438,7 @@ func (bc *blockchain) computeDifficulty(id coin.Hash) (uint64, error) {
 	if windowTime <= 0 {
 		ratio = math.Inf(+1)
 	} else {
-		ratio = float64(targetBlockInterval) * float64(difficultyRetargetWindow) / float64(windowTime)
+		ratio = float64(targetBlockInterval) * float64(h - pastHeaderHeight) / float64(windowTime)
 	}
 	logRatio := math.Log2(ratio)
 
@@ -448,26 +446,24 @@ func (bc *blockchain) computeDifficulty(id coin.Hash) (uint64, error) {
 		ratio, windowTime, targetBlockInterval)
 
 	// Clamp to maximum of 4x increase/decrease
-	// TODO: Ditto on past difficulty vs past target difficulty
-	newDifficulty := pastHeader.Header.Difficulty
 	if logRatio > 2 {
-		newDifficulty += 2
+		header.NextDifficulty += 2
 	} else if logRatio < -2 {
-		newDifficulty -= 2
+		header.NextDifficulty -= 2
 	} else if logRatio < 0 {
-		newDifficulty -= uint64(-logRatio)
+		header.NextDifficulty -= uint64(-logRatio)
 	} else if logRatio > 0 {
-		newDifficulty += uint64(logRatio)
+		header.NextDifficulty += uint64(logRatio)
 	} else {
 		// 0 or NaN, just no-op
 	}
 
 	// Ensure at minimum
-	if newDifficulty < MinimumDifficulty {
-		newDifficulty = MinimumDifficulty
+	if header.NextDifficulty < MinimumDifficulty {
+		header.NextDifficulty = MinimumDifficulty
 	}
 
-	return newDifficulty, nil
+	return nil
 }
 
 /*
@@ -481,6 +477,7 @@ func (bc *blockchain) processHeader(h coin.Header) (*processedHeader, error) {
 			Header:          h,
 			BlockHeight:     0,
 			TotalDifficulty: h.Difficulty,
+			NextDifficulty:  MinimumDifficulty,
 		}, nil
 	} else {
 		// Check that block extends existing header
@@ -489,20 +486,23 @@ func (bc *blockchain) processHeader(h coin.Header) (*processedHeader, error) {
 			return nil, err
 		}
 
-		targetDiff, err := bc.computeDifficulty(h.ParentID)
+		if h.Difficulty < prevHeader.NextDifficulty {
+			return nil, ErrDifficulty
+		}
+
+		newHeader := &processedHeader{
+			Header:          h,
+			BlockHeight:     prevHeader.BlockHeight + 1,
+			TotalDifficulty: prevHeader.TotalDifficulty + h.Difficulty,
+			NextDifficulty:  prevHeader.NextDifficulty,
+		}
+
+		err = bc.retargetDifficulty(newHeader)
 		if err != nil {
 			return nil, err
 		}
 
-		if h.Difficulty < targetDiff {
-			return nil, ErrDifficulty
-		}
-
-		return &processedHeader{
-			Header:          h,
-			BlockHeight:     prevHeader.BlockHeight + 1,
-			TotalDifficulty: prevHeader.TotalDifficulty + h.Difficulty,
-		}, nil
+		return newHeader, nil
 	}
 }
 
