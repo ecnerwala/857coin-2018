@@ -1,13 +1,11 @@
 package server
 
 import (
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"math"
-	"math/big"
 	"sync"
 	"time"
 
@@ -125,26 +123,12 @@ func (bc *blockchain) mineGenesisBlock() error {
 	b := coin.Block(msg)
 
 	genesisHeader = coin.Header{
-		MerkleRoot: sha256.Sum256([]byte(msg)),
 		Difficulty: MinimumDifficulty,
 		Timestamp:  time.Now().UnixNano(),
 	}
+	genesisHeader.MineBlock(b)
 
-	A, B := genesisHeader.ComputeAAndB()
-	aesA := make([]*big.Int, 0)
-	aesB := make([]*big.Int, 0)
-	for i := uint64(0); i >= 0; i++ {
-		aesA = append(aesA, coin.ComputeAES(A, i))
-		aesB = append(aesB, coin.ComputeAES(B, i))
-		for j := uint64(0); j < i; j++ {
-			if coin.ComputeHammingCloseness(aesA[i], aesA[j], aesB[i], aesB[j]) >= genesisHeader.Difficulty {
-				genesisHeader.Nonces[1] = i
-				genesisHeader.Nonces[2] = j
-				return bc.AddBlock(genesisHeader, b)
-			}
-		}
-	}
-	return nil
+	return bc.AddBlock(genesisHeader, b)
 }
 
 func (bc *blockchain) loadScores() error {
