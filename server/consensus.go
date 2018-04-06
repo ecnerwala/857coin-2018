@@ -20,7 +20,7 @@ const (
 	targetBlockInterval      = 10 * 60 * 1000 * 1000 * 1000      // 10 minutes
 	difficultyRetargetLength = 24 * 60 * 60 * 1000 * 1000 * 1000 // 1 day
 	difficultyRetargetWindow = uint64(difficultyRetargetLength / targetBlockInterval)
-	maxClockDrift            = 10 * 60 * 1000 * 1000 * 1000 // 10 minutes
+	maxClockDrift            = 2 * 60 * 1000 * 1000 * 1000 // 2 minutes
 
 	BlockchainPath = "blockchain.db"
 
