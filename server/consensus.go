@@ -127,13 +127,13 @@ func (bc *blockchain) mineGenesisBlock() error {
 	genesisHeader = coin.Header{
 		MerkleRoot: sha256.Sum256([]byte(msg)),
 		Difficulty: MinimumDifficulty,
-		Timestamp: time.Now().UnixNano(),
+		Timestamp:  time.Now().UnixNano(),
 	}
 
 	A, B := genesisHeader.ComputeAAndB()
 	aesA := make([]*big.Int, 0)
 	aesB := make([]*big.Int, 0)
-  for i := uint64(0); i >= 0; i++ {
+	for i := uint64(0); i >= 0; i++ {
 		aesA = append(aesA, coin.ComputeAES(A, i))
 		aesB = append(aesB, coin.ComputeAES(B, i))
 		for j := uint64(0); j < i; j++ {
