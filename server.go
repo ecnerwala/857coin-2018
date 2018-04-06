@@ -15,5 +15,5 @@ func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 	flag.Parse()
 
-	server.NewExplorer(*addr)
+	server.Start(*addr)
 }

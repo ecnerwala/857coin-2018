@@ -24,41 +24,16 @@ type explorer struct {
 	Nodes  template.JS
 	Edges  template.JS
 	HeadId template.JS
-
-	server *http.Server
 }
 
-func NewExplorer(addr string) *explorer {
+func NewExplorer() *explorer {
 	e := &explorer{
 		tick:     time.NewTicker(1 * time.Minute),
 		template: template.Must(template.ParseFiles("templates/explore.html")),
-		server: &http.Server{
-			Addr:        addr,
-			Handler:     LogHandler(http.DefaultServeMux),
-			ReadTimeout: 10 * time.Second,
-		},
 	}
 	err := e.update()
 	if err != nil {
 		log.Println("error updating: ", err)
-	}
-
-	http.HandleFunc("/", indexHandler)
-	http.HandleFunc("/add", addHandler)
-	http.HandleFunc("/next", nextHandler)
-	http.HandleFunc("/head", headHandler)
-	http.HandleFunc("/scores", scoresHandler)
-	http.Handle("/search/", http.StripPrefix("/search/", http.HandlerFunc(searchHandler)))
-	http.Handle("/block/", http.StripPrefix("/block/", http.HandlerFunc(blockHandler)))
-
-	http.HandleFunc("/explore", e.handler)
-
-	staticHandler := http.FileServer(http.Dir("static"))
-	http.Handle("/static/", http.StripPrefix("/static/", staticHandler))
-
-	err = e.server.ListenAndServe()
-	if err != nil {
-		log.Fatal("ListenAndServe: ", err)
 	}
 
 	return e
