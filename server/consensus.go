@@ -411,65 +411,69 @@ func (bc *blockchain) computeDifficulty(id coin.Hash) (uint64, error) {
 		return MinimumDifficulty, nil
 	}
 
-	pheader, err := bc.getHeader(id)
+	header, err := bc.getHeader(id)
 	if err != nil {
 		return 0, err
 	}
 
-	h := pheader.BlockHeight
-
-	if h < difficultyRetargetWindow-1 {
-		return MinimumDifficulty, nil
-	}
+	h := header.BlockHeight
 
 	retargetOffset := h % difficultyRetargetWindow
 	pastHeaderHeight := h - retargetOffset
 
-	var pastHeaderID coin.Hash
-	for pheader.BlockHeight > pastHeaderHeight {
-		if mainID, ok := bc.heightToHash[pheader.BlockHeight]; ok {
-			if pheader.Header.Sum() == mainID {
-				pastHeaderID = bc.heightToHash[pastHeaderHeight]
+	pastHeader := header
+
+	for pastHeader.BlockHeight > pastHeaderHeight {
+		// Skip along the main chain if possible
+		if mainID, ok := bc.heightToHash[pastHeader.BlockHeight]; ok {
+			if pastHeader.Header.Sum() == mainID {
+				pastHeaderID := bc.heightToHash[pastHeaderHeight]
+				pastHeader, err = bc.getHeader(pastHeaderID)
+				if err != nil {
+					return 0, err
+				}
 				break
 			}
 		}
 
-		pheader, err = bc.getHeader(pheader.Header.ParentID)
+		pastHeader, err = bc.getHeader(pastHeader.Header.ParentID)
 		if err != nil {
 			return 0, err
 		}
 	}
 
-	if pheader.BlockHeight != pastHeaderHeight {
-		pheader, err = bc.getHeader(pastHeaderID)
-		if err != nil {
-			return 0, err
-		}
-	}
-
+	// TODO: this shouldn't be pastHeader's actual difficulty, but the past target difficulty
+	// We should either store past target difficulty or enforce difficulty == targetDifficulty
 	if h%difficultyRetargetWindow != difficultyRetargetWindow-1 {
-		return pheader.Header.Difficulty, nil
+		return pastHeader.Header.Difficulty, nil
 	}
 
-	head := bc.head.Header
-	windowTime := head.Timestamp - pheader.Header.Timestamp
+	windowTime := header.Header.Timestamp - pastHeader.Header.Timestamp
 
-	ratio := float64(targetBlockInterval) * float64(difficultyRetargetWindow) / float64(windowTime)
+	var ratio float64
+	if windowTime <= 0 {
+		ratio = math.Inf(+1)
+	} else {
+		ratio = float64(targetBlockInterval) * float64(difficultyRetargetWindow) / float64(windowTime)
+	}
 	logRatio := math.Log2(ratio)
 
 	log.Printf("[Difficulty] log2: %f ratio: %f time: %d interval %d\n", logRatio,
 		ratio, windowTime, targetBlockInterval)
 
 	// Clamp to maximum of 4x increase/decrease
-	newDifficulty := pheader.Header.Difficulty
+	// TODO: Ditto on past difficulty vs past target difficulty
+	newDifficulty := pastHeader.Header.Difficulty
 	if logRatio > 2 {
 		newDifficulty += 2
 	} else if logRatio < -2 {
 		newDifficulty -= 2
 	} else if logRatio < 0 {
 		newDifficulty -= uint64(-logRatio)
-	} else {
+	} else if logRatio > 0 {
 		newDifficulty += uint64(logRatio)
+	} else {
+		// 0 or NaN, just no-op
 	}
 
 	// Ensure at minimum
