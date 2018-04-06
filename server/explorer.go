@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -22,7 +23,7 @@ type explorer struct {
 
 	Nodes  template.JS
 	Edges  template.JS
-	Height template.JS
+	HeadId template.JS
 
 	server *http.Server
 }
@@ -83,9 +84,9 @@ func (e *explorer) handler(w http.ResponseWriter, r *http.Request) {
 func (e *explorer) update() error {
 	nodes := new(bytes.Buffer)
 	edges := new(bytes.Buffer)
-	height := bchain.head.BlockHeight
 
 	bchain.Lock()
+	headId := bchain.head.Header.Sum()
 	totalHeight := bchain.head.BlockHeight
 	iter := bchain.db.NewIterator(util.BytesPrefix([]byte(HeaderBucket)), nil)
 	for iter.Next() {
@@ -125,8 +126,8 @@ func (e *explorer) update() error {
 		}
 
 		fmt.Fprintf(nodes, "{id:'%x',level:%d,label:'%s',color:'%s'},\n",
-			hash[:], totalHeight-pheader.BlockHeight, label, color)
-		fmt.Fprintf(edges, "{from:'%x',to:'%x',color:'%s'},\n",
+			hash[:], pheader.BlockHeight, label, color)
+		fmt.Fprintf(edges, "{from:'%s',to:'%x',color:'%s'},\n",
 			parentID, hash[:], color)
 	}
 	bchain.loadScores()
@@ -135,7 +136,7 @@ func (e *explorer) update() error {
 	e.mu.Lock()
 	e.Nodes = template.JS(nodes.String())
 	e.Edges = template.JS(edges.String())
-	e.Height = template.JS(fmt.Sprintf("%dpx", (height+3)*65))
+	e.HeadId = template.JS(hex.EncodeToString(headId[:]))
 
 	buf := new(bytes.Buffer)
 	if err := e.template.Execute(buf, e); err != nil {
