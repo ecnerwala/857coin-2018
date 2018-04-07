@@ -87,7 +87,7 @@ func (h *Header) Sum() Hash {
 	return sha256.Sum256(b)
 }
 
-func (h *Header) ComputeAAndB() (cipher.Block, cipher.Block) {
+func (h *Header) computeAAndB() (cipher.Block, cipher.Block) {
 	b := make([]byte, 32+32+8+8+8+1)
 	copy(b, h.ParentID[:])
 	copy(b[32:], h.MerkleRoot[:])
@@ -102,7 +102,7 @@ func (h *Header) ComputeAAndB() (cipher.Block, cipher.Block) {
 	return A, B
 }
 
-func ComputeAES(block cipher.Block, m uint64) *big.Int {
+func computeAES(block cipher.Block, m uint64) *big.Int {
 	blockM := make([]byte, 16)
 	binary.BigEndian.PutUint64(blockM, 0)
 	binary.BigEndian.PutUint64(blockM[8:], m)
@@ -112,7 +112,7 @@ func ComputeAES(block cipher.Block, m uint64) *big.Int {
 	return c
 }
 
-func ComputeHammingCloseness(Ai, Aj, Bi, Bj *big.Int) uint64 {
+func computeHammingCloseness(Ai, Aj, Bi, Bj *big.Int) uint64 {
 	int128 := new(big.Int).SetUint64(128)
 	mod := new(big.Int).SetUint64(2)
 	mod.Exp(mod, int128, nil)
@@ -152,12 +152,12 @@ func (h *Header) validPoW() error {
 		return ErrInvalidPoW
 	}
 
-	A, B := h.ComputeAAndB()
-	Ai := ComputeAES(A, h.Nonces[1])
-	Aj := ComputeAES(A, h.Nonces[2])
-	Bi := ComputeAES(B, h.Nonces[1])
-	Bj := ComputeAES(B, h.Nonces[2])
-	d := ComputeHammingCloseness(Ai, Aj, Bi, Bj)
+	A, B := h.computeAAndB()
+	Ai := computeAES(A, h.Nonces[1])
+	Aj := computeAES(A, h.Nonces[2])
+	Bi := computeAES(B, h.Nonces[1])
+	Bj := computeAES(B, h.Nonces[2])
+	d := computeHammingCloseness(Ai, Aj, Bi, Bj)
 
 	if d < h.Difficulty {
 		return ErrInvalidPoW
@@ -178,4 +178,23 @@ func (h *Header) validMerkleTree(b Block) error {
 
 func computeMerkleTreeV0(b Block) Hash {
 	return sha256.Sum256([]byte(b))
+}
+
+func (h *Header) MineBlock(b Block) {
+	h.MerkleRoot = computeMerkleTreeV0(b)
+
+	A, B := h.computeAAndB()
+	aesA := make([]*big.Int, 0)
+	aesB := make([]*big.Int, 0)
+	for i := uint64(0); ; i++ {
+		aesA = append(aesA, computeAES(A, i))
+		aesB = append(aesB, computeAES(B, i))
+		for j := uint64(0); j < i; j++ {
+			if computeHammingCloseness(aesA[i], aesA[j], aesB[i], aesB[j]) >= h.Difficulty {
+				h.Nonces[1] = i
+				h.Nonces[2] = j
+				return
+			}
+		}
+	}
 }

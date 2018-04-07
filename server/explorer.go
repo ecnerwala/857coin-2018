@@ -16,50 +16,26 @@ import (
 
 // TODO currently updates every minute, but could update every new block
 type explorer struct {
-	mu       sync.Mutex
+	mu       sync.RWMutex
 	buf      []byte
+	err      error
 	tick     *time.Ticker
 	template *template.Template
+}
 
+type explorerTemplateData struct {
 	Nodes  template.JS
 	Edges  template.JS
 	HeadId template.JS
-
-	server *http.Server
 }
 
-func NewExplorer(addr string) *explorer {
+func NewExplorer() *explorer {
 	e := &explorer{
 		tick:     time.NewTicker(1 * time.Minute),
 		template: template.Must(template.ParseFiles("templates/explore.html")),
-		server: &http.Server{
-			Addr:        addr,
-			Handler:     LogHandler(http.DefaultServeMux),
-			ReadTimeout: 10 * time.Second,
-		},
-	}
-	err := e.update()
-	if err != nil {
-		log.Println("error updating: ", err)
 	}
 
-	http.HandleFunc("/", indexHandler)
-	http.HandleFunc("/add", addHandler)
-	http.HandleFunc("/next", nextHandler)
-	http.HandleFunc("/head", headHandler)
-	http.HandleFunc("/scores", scoresHandler)
-	http.Handle("/search/", http.StripPrefix("/search/", http.HandlerFunc(searchHandler)))
-	http.Handle("/block/", http.StripPrefix("/block/", http.HandlerFunc(blockHandler)))
-
-	http.HandleFunc("/explore", e.handler)
-
-	staticHandler := http.FileServer(http.Dir("static"))
-	http.Handle("/static/", http.StripPrefix("/static/", staticHandler))
-
-	err = e.server.ListenAndServe()
-	if err != nil {
-		log.Fatal("ListenAndServe: ", err)
-	}
+	e.update()
 
 	return e
 }
@@ -67,21 +43,33 @@ func NewExplorer(addr string) *explorer {
 func (e *explorer) handler(w http.ResponseWriter, r *http.Request) {
 	select {
 	case <-e.tick.C:
-		if err := e.update(); err != nil {
-			httpError(w, http.StatusInternalServerError, "error updating explorer: %s", err)
-			return
-		}
-		break
+		e.update()
 	default:
-		break
+	}
+
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	if e.err != nil {
+		httpError(w, http.StatusInternalServerError, "error updating explorer: %s", e.err)
+		return
+	}
+	w.Write(e.buf)
+}
+
+func (e *explorer) update() {
+	buf, err := e.executeTemplate()
+
+	if err != nil {
+		log.Println("error updating explorer: ", err)
 	}
 
 	e.mu.Lock()
-	w.Write(e.buf)
-	e.mu.Unlock()
+	defer e.mu.Unlock()
+	e.buf, e.err = buf, err
 }
 
-func (e *explorer) update() error {
+func (e *explorer) executeTemplate() ([]byte, error) {
 	nodes := new(bytes.Buffer)
 	edges := new(bytes.Buffer)
 
@@ -95,7 +83,7 @@ func (e *explorer) update() error {
 		var pheader processedHeader
 		if err := json.Unmarshal(headerBytes, &pheader); err != nil {
 			bchain.Unlock()
-			return err
+			return nil, err
 		}
 
 		if pheader.BlockHeight > totalHeight {
@@ -108,7 +96,7 @@ func (e *explorer) update() error {
 		label, err := bchain.getBlock(hash)
 		if err != nil {
 			bchain.Unlock()
-			return err
+			return nil, err
 		}
 		trunc := 5
 		if len(label) < trunc {
@@ -130,21 +118,17 @@ func (e *explorer) update() error {
 		fmt.Fprintf(edges, "{from:'%s',to:'%x',color:'%s'},\n",
 			parentID, hash[:], color)
 	}
-	bchain.loadScores()
 	bchain.Unlock()
 
-	e.mu.Lock()
-	e.Nodes = template.JS(nodes.String())
-	e.Edges = template.JS(edges.String())
-	e.HeadId = template.JS(hex.EncodeToString(headId[:]))
+	data := &explorerTemplateData{
+		Nodes:  template.JS(nodes.String()),
+		Edges:  template.JS(edges.String()),
+		HeadId: template.JS(hex.EncodeToString(headId[:])),
+	}
 
 	buf := new(bytes.Buffer)
-	if err := e.template.Execute(buf, e); err != nil {
-		e.mu.Unlock()
-		return fmt.Errorf("template error: %s", err)
+	if err := e.template.Execute(buf, data); err != nil {
+		return nil, fmt.Errorf("template error: %s", err)
 	}
-	e.buf = buf.Bytes()
-	e.mu.Unlock()
-
-	return nil
+	return buf.Bytes(), nil
 }

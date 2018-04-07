@@ -46,3 +46,31 @@ func stripPort(s string) string {
 	}
 	return s
 }
+
+func Start(addr string) error {
+	server := &http.Server{
+		Addr:        addr,
+		Handler:     LogHandler(http.DefaultServeMux),
+		ReadTimeout: 10 * time.Second,
+	}
+
+	http.HandleFunc("/", indexHandler)
+	http.HandleFunc("/add", addHandler)
+	http.HandleFunc("/next", nextHandler)
+	http.HandleFunc("/head", headHandler)
+	http.HandleFunc("/scores", scoresHandler)
+	http.Handle("/search/", http.StripPrefix("/search/", http.HandlerFunc(searchHandler)))
+	http.Handle("/block/", http.StripPrefix("/block/", http.HandlerFunc(blockHandler)))
+
+	e := NewExplorer()
+	http.HandleFunc("/explore", e.handler)
+
+	staticHandler := http.FileServer(http.Dir("static"))
+	http.Handle("/static/", http.StripPrefix("/static/", staticHandler))
+
+	err := server.ListenAndServe()
+	if err != nil {
+		log.Fatal("ListenAndServe: ", err)
+	}
+	return err
+}
