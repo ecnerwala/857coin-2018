@@ -14,6 +14,37 @@ import (
 	"github.com/syndtr/goleveldb/leveldb/util"
 )
 
+type (
+	exploreBlock struct {
+		ID              coin.Hash   `json:"id"`
+		Header          coin.Header `json:"header"`
+		Block           coin.Block  `json:"block"`
+		BlockHeight     uint64      `json:"blockheight"`
+		IsMainChain     bool        `json:"ismainchain"`
+		EverMainChain   bool        `json:"evermainchain"`
+		TotalDifficulty uint64      `json:"totaldiff"`
+		Timestamp       time.Time   `json:"timestamp"`
+	}
+
+	compositeBlock struct {
+		Header coin.Header `json:"header"`
+		Block  coin.Block  `json:"block"`
+	}
+)
+
+func newExploreBlock(pheader *processedHeader, b coin.Block) *exploreBlock {
+	return &exploreBlock{
+		ID:              pheader.Header.Sum(),
+		Header:          pheader.Header,
+		Block:           b,
+		BlockHeight:     pheader.BlockHeight,
+		IsMainChain:     pheader.IsMainChain,
+		EverMainChain:   pheader.EverMainChain,
+		TotalDifficulty: pheader.TotalDifficulty,
+		Timestamp:       time.Unix(0, pheader.Header.Timestamp),
+	}
+}
+
 func addHandler(w http.ResponseWriter, r *http.Request) {
 	req := new(compositeBlock)
 	if err := json.NewDecoder(r.Body).Decode(req); err != nil {
@@ -45,6 +76,7 @@ func nextHandler(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusInternalServerError, "json encoding error: %s", err)
 		return
 	}
+	w.Header().Set("Content-Type", "application/json")
 	w.Write(j)
 }
 
@@ -58,6 +90,7 @@ func headHandler(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusInternalServerError, "json encoding error: %s", err)
 		return
 	}
+	w.Header().Set("Content-Type", "application/json")
 	w.Write(j)
 }
 
@@ -93,16 +126,7 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		blocks[i] = exploreBlock{
-			ID:              pheader.Header.Sum(),
-			Header:          pheader.Header,
-			Block:           b,
-			BlockHeight:     pheader.BlockHeight,
-			IsMainChain:     pheader.IsMainChain,
-			EverMainChain:   pheader.EverMainChain,
-			TotalDifficulty: pheader.TotalDifficulty,
-			Timestamp:       time.Unix(0, pheader.Header.Timestamp),
-		}
+		blocks[i] = *newExploreBlock(pheader, b)
 		i++
 	}
 	bchain.Unlock()
@@ -112,6 +136,7 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusInternalServerError, "json encoding err: %s", err)
 		return
 	}
+	w.Header().Set("Content-Type", "application/json")
 	w.Write(j)
 }
 
@@ -138,22 +163,14 @@ func blockHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	bchain.Unlock()
 
-	fullBlock := exploreBlock{
-		ID:              ph.Header.Sum(),
-		Header:          ph.Header,
-		Block:           coin.Block(blockBytes),
-		BlockHeight:     ph.BlockHeight,
-		IsMainChain:     ph.IsMainChain,
-		EverMainChain:   ph.EverMainChain,
-		TotalDifficulty: ph.TotalDifficulty,
-		Timestamp:       time.Unix(0, ph.Header.Timestamp),
-	}
+	fullBlock := newExploreBlock(ph, coin.Block(blockBytes))
 
 	j, err := json.MarshalIndent(fullBlock, "", "  ")
 	if err != nil {
 		httpError(w, http.StatusInternalServerError, "json encoding error: %s", err)
 		return
 	}
+	w.Header().Set("Content-Type", "application/json")
 	w.Write(j)
 }
 
@@ -181,6 +198,7 @@ func scoresHandler(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusInternalServerError, "json encoding error: %s", err)
 		return
 	}
+	w.Header().Set("Content-Type", "application/json")
 	w.Write(j)
 }
 
