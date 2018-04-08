@@ -52,11 +52,21 @@ func addHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := bchain.AddBlock(req.Header, req.Block); err != nil {
+	ph, err := bchain.AddBlock(req.Header, req.Block)
+	if err != nil {
 		httpError(w, http.StatusBadRequest, "failed to add block: %s", err)
 		return
 	}
-	w.Write([]byte("success"))
+
+	fullBlock := newExploreBlock(ph, req.Block)
+
+	j, err := json.MarshalIndent(fullBlock, "", "  ")
+	if err != nil {
+		httpError(w, http.StatusInternalServerError, "json encoding error: %s", err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(j)
 }
 
 func nextHandler(w http.ResponseWriter, r *http.Request) {

@@ -112,7 +112,8 @@ func (bc *blockchain) mineGenesisBlock() error {
 	}
 	genesisHeader.MineBlock(b)
 
-	return bc.AddBlock(genesisHeader, b)
+	_, err := bc.AddBlock(genesisHeader, b)
+	return err
 }
 
 func (bc *blockchain) loadScores() error {
@@ -193,20 +194,20 @@ func (bc *blockchain) loadHeightToHash() error {
  * Consensus Set
  */
 
-func (bc *blockchain) AddBlock(h coin.Header, b coin.Block) error {
+func (bc *blockchain) AddBlock(h coin.Header, b coin.Block) (*processedHeader, error) {
 	if h.Difficulty < MinimumDifficulty {
-		return ErrDifficulty
+		return nil, ErrDifficulty
 	}
 
 	// Check that timestamp is within 2 minutes of now
 	diff := int64(h.Timestamp) - time.Now().UnixNano()
 	if diff > maxClockDrift || diff < -maxClockDrift {
-		return ErrClockDrift
+		return nil, ErrClockDrift
 	}
 
 	// Only process valid blocks
 	if err := h.Valid(b); err != nil {
-		return err
+		return nil, err
 	}
 
 	bc.Lock()
@@ -215,19 +216,19 @@ func (bc *blockchain) AddBlock(h coin.Header, b coin.Block) error {
 	// Check spam filter
 	id := h.Sum()
 	if _, ok := bc.spam[id]; ok {
-		return ErrSpamHeader
+		return nil, ErrSpamHeader
 	}
 
 	// Check database for existing header
 	if _, err := bc.getHeader(id); err == nil {
 		bc.spam[id] = struct{}{}
-		return ErrSpamHeader
+		return nil, ErrSpamHeader
 	}
 
 	// Build processedHeader
 	ph, err := bc.processHeader(h)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	err = bc.extendChain(ph, b)
@@ -235,7 +236,7 @@ func (bc *blockchain) AddBlock(h coin.Header, b coin.Block) error {
 		// Attempt to fix up scores, if we failed to extend
 		bc.loadScores()
 	}
-	return err
+	return ph, err
 }
 
 func (bc *blockchain) extendChain(ph *processedHeader, b coin.Block) error {
